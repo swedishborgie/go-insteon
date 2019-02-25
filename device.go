@@ -2,24 +2,23 @@ package insteon
 
 import (
 	"bytes"
-	"encoding/hex"
+	"errors"
 	"fmt"
 )
 
 // Device represents an Insteon device.
 type Device struct {
 	address []byte
-	hub     *Hub
+	hub     Hub
 }
 
-// NewDevice defines a new device addressable by a Hub.
-func (hub *Hub) NewDevice(addr string) (*Device, error) {
-	hexAddr, err := hex.DecodeString(addr)
-	if err != nil {
-		return nil, err
+// NewDevice creates a new device by raw address.
+func NewDevice(hub Hub, addr []byte) (*Device, error) {
+	if addr == nil || len(addr) != 3 {
+		return nil, errors.New("address must not be nil and must be exactly three bytes long")
 	}
 	return &Device{
-		address: hexAddr,
+		address: addr,
 		hub:     hub,
 	}, nil
 }
@@ -78,29 +77,35 @@ func (d *Device) LED(on bool) error {
 
 // GetStatus gets the current power status of the device.
 func (d *Device) GetStatus() (*DeviceStatus, error) {
+	err := d.hub.ClearBuffer()
+	if err != nil {
+		return nil, err
+	}
+
 	cmd, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdQueryStatusRequest, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	for i := 0; i < 5; i++ {
-		buf, err := d.hub.GetBuffer()
-		if err != nil {
+		bufChan, errChan := d.hub.GetBuffer()
+		select {
+		case err := <-errChan:
 			return nil, err
-		}
-
-		idx := bytes.Index(buf, cmd)
-		if idx >= 0 && idx+8+12 < len(buf) {
-			if buf[idx+8] == serialACK {
-				return &DeviceStatus{
-					DeviceAddr: buf[idx+11 : idx+14],
-					ModemAddr:  buf[idx+14 : idx+17],
-					HopCount:   buf[idx+17],
-					Delta:      buf[idx+18],
-					Level:      buf[idx+19],
-				}, nil
-			} else if buf[idx+8] == serialNAK {
-				return nil, fmt.Errorf("device %X not ready for commands", d.address)
+		case buf := <-bufChan:
+			idx := bytes.Index(buf, cmd)
+			if idx >= 0 && idx+8+12 <= len(buf) {
+				if buf[idx+8] == serialACK {
+					return &DeviceStatus{
+						DeviceAddr: buf[idx+11 : idx+14],
+						ModemAddr:  buf[idx+14 : idx+17],
+						HopCount:   buf[idx+17],
+						Delta:      buf[idx+18],
+						Level:      buf[idx+19],
+					}, nil
+				} else if buf[idx+8] == serialNAK {
+					return nil, fmt.Errorf("device %X not ready for commands", d.address)
+				}
 			}
 		}
 	}

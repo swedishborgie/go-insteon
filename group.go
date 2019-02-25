@@ -3,11 +3,11 @@ package insteon
 // Group represents a device grouop.
 type Group struct {
 	groupID byte
-	hub     *Hub
+	hub     Hub
 }
 
-// NewGroup creates a new group addressable by a hub.
-func (hub *Hub) NewGroup(groupID byte) *Group {
+// NewGroup creates a new group.
+func NewGroup(hub Hub, groupID byte) *Group {
 	return &Group{
 		groupID: groupID,
 		hub:     hub,
