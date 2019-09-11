@@ -11,39 +11,28 @@ import (
 
 // Hub2245 is a reference to an Insteon Hub
 type Hub2245 struct {
-	address    string
-	userName   string
-	password   string
-	readChan   chan []byte
-	readErrors chan error
+	address  string
+	userName string
+	password string
 }
 
 // NewHub2245 creates a new reference to an Insteon hub.
 func NewHub2245(address string, userName string, password string) Hub {
 	return &Hub2245{
-		address:    address,
-		userName:   userName,
-		password:   password,
-		readChan:   make(chan []byte, 10),
-		readErrors: make(chan error, 10),
+		address:  address,
+		userName: userName,
+		password: password,
 	}
 }
 
 // GetBuffer returns the current PLM buffer from the Insteon hub.
-func (hub *Hub2245) GetBuffer() (chan []byte, chan error) {
+func (hub *Hub2245) GetBuffer() ([]byte, error) {
 	resp, err := hub.doRequest("/buffstatus.xml")
 	if err != nil {
-		hub.readErrors <- err
-		return hub.readChan, hub.readErrors
+		return nil, err
 	}
 
-	buffer, err := parseBufferResponse(resp.Body)
-	if err != nil {
-		hub.readErrors <- err
-		return hub.readChan, hub.readErrors
-	}
-	hub.readChan <- buffer
-	return hub.readChan, hub.readErrors
+	return parseBufferResponse(resp.Body)
 }
 
 // ClearBuffer clears the PLM buffer.
@@ -53,11 +42,16 @@ func (hub *Hub2245) ClearBuffer() error {
 }
 
 // SendCommand sends a standard command to a specific Insteon device.
-func (hub *Hub2245) SendCommand(hostCmd byte, addr []byte, imCmd1 byte, imCmd2 byte) ([]byte, error) {
+func (hub *Hub2245) SendCommand(hostCmd byte, addr Address, imCmd1 byte, imCmd2 byte) (*CommandResponse, error) {
 	plmCmd := buildPlmCommand(hostCmd, addr, imCmd1, imCmd2)
 	uri := fmt.Sprintf("/%X?%X=I=%X", cmdTypeFull, plmCmd, cmdTypeFull)
-	_, err := hub.doRequest(uri)
-	return plmCmd, err
+	if _, err := hub.doRequest(uri); err != nil {
+		return nil, err
+	}
+	if err := hub.waitForAck(plmCmd); err != nil {
+		return nil, err
+	}
+	return hub.waitForResponse()
 }
 
 // SendGroupCommand sends a command to a group.
@@ -69,27 +63,41 @@ func (hub *Hub2245) SendGroupCommand(hostCmd byte, group byte) error {
 
 func (hub *Hub2245) waitForAck(cmd []byte) error {
 	for i := 0; i < 5; i++ {
-		bufChan, errChan := hub.GetBuffer()
-		select {
-		case err := <-errChan:
+		buf, err := hub.GetBuffer()
+		if err != nil {
 			return err
-		case buf := <-bufChan:
-			idx := bytes.Index(buf, cmd)
-			if idx >= 0 && idx+len(cmd)+1 <= len(buf) {
-				if buf[idx+len(cmd)] == serialACK {
-					return nil
-				} else if buf[idx+len(cmd)] == serialNAK {
-					return fmt.Errorf("device not ready for commands")
-				}
+		}
+		idx := bytes.Index(buf, cmd)
+		if idx >= 0 && idx+len(cmd)+1 <= len(buf) {
+			if buf[idx+len(cmd)] == serialACK {
+				return nil
+			} else if buf[idx+len(cmd)] == serialNAK {
+				return fmt.Errorf("device not ready for commands")
 			}
 		}
 	}
 	return fmt.Errorf("timeout waiting for device")
 }
 
+func (hub *Hub2245) waitForResponse() (*CommandResponse, error) {
+	for i := 0; i < 5; i++ {
+		buf, err := hub.GetBuffer()
+		if err != nil {
+			return nil, err
+		}
+		idx := bytes.Index(buf, []byte{0x02, 0x50})
+		if idx >= 0 && idx+11 <= len(buf) {
+			rsp := &CommandResponse{}
+			rsp.fromBytes(buf[idx : idx+11])
+			return rsp, nil
+		}
+	}
+	return nil, fmt.Errorf("timeout waiting for device")
+}
+
 // buildPlmCommand builds a power line modem command that gets sent by the
 // Insteon hub.
-func buildPlmCommand(hostCmd byte, addr []byte, imCmd1, imCmd2 byte) []byte {
+func buildPlmCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte) []byte {
 	return []byte{
 		serialStart,
 		hostCmd,

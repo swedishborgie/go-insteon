@@ -1,22 +1,15 @@
 package insteon
 
-import (
-	"bytes"
-	"errors"
-	"fmt"
-)
+type Address [3]byte
 
 // Device represents an Insteon device.
 type Device struct {
-	address []byte
+	address Address
 	hub     Hub
 }
 
 // NewDevice creates a new device by raw address.
-func NewDevice(hub Hub, addr []byte) (*Device, error) {
-	if addr == nil || len(addr) != 3 {
-		return nil, errors.New("address must not be nil and must be exactly three bytes long")
-	}
+func NewDevice(hub Hub, addr Address) (*Device, error) {
 	return &Device{
 		address: addr,
 		hub:     hub,
@@ -82,42 +75,26 @@ func (d *Device) GetStatus() (*DeviceStatus, error) {
 		return nil, err
 	}
 
-	cmd, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdQueryStatusRequest, 0)
+	rsp, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdQueryStatusRequest, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := 0; i < 5; i++ {
-		bufChan, errChan := d.hub.GetBuffer()
-		select {
-		case err := <-errChan:
-			return nil, err
-		case buf := <-bufChan:
-			idx := bytes.Index(buf, cmd)
-			if idx >= 0 && idx+8+12 <= len(buf) {
-				if buf[idx+8] == serialACK {
-					return &DeviceStatus{
-						DeviceAddr: buf[idx+11 : idx+14],
-						ModemAddr:  buf[idx+14 : idx+17],
-						HopCount:   buf[idx+17],
-						Delta:      buf[idx+18],
-						Level:      buf[idx+19],
-					}, nil
-				} else if buf[idx+8] == serialNAK {
-					return nil, fmt.Errorf("device %X not ready for commands", d.address)
-				}
-			}
-		}
-	}
-	return nil, fmt.Errorf("device %X didn't respond", d.address)
+	return &DeviceStatus{
+		DeviceAddr: rsp.From,
+		ModemAddr:  rsp.To,
+		HopCount:   rsp.Flags,
+		Delta:      rsp.Cmd1,
+		Level:      rsp.Cmd2,
+	}, nil
 }
 
 // DeviceStatus represents the status of a device.
 type DeviceStatus struct {
 	// DeviceAddr is the address of the device.
-	DeviceAddr []byte
+	DeviceAddr Address
 	// ModemAddr is the address of the hub.
-	ModemAddr []byte
+	ModemAddr Address
 	// Hop count to the device.
 	HopCount byte
 	// Delta of the device.
