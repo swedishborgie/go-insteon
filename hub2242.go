@@ -49,6 +49,23 @@ func (hub *Hub2242) SendCommand(hostCmd byte, addr Address, imCmd1 byte, imCmd2 
 	}
 	return hub.waitForResponse()
 }
+
+func (hub *Hub2242) SendExtendedCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*CommandResponse, error) {
+	if err := hub.ClearBuffer(); err != nil {
+		return nil, err
+	}
+	cmd := buildExtPlmCommand(hostCmd, addr, imCmd1, imCmd2, userData)
+	_, err := hub.conn.Write(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := hub.waitForAck(cmd); err != nil {
+		return nil, err
+	}
+	return hub.waitForResponse()
+}
+
 func (hub *Hub2242) SendGroupCommand(hostCmd byte, group byte) error {
 	return nil
 }
@@ -81,6 +98,8 @@ func (hub *Hub2242) waitForResponse() (*CommandResponse, error) {
 			if idx >= 0 && idx+11 <= len(hub.buffer) {
 				rsp := &CommandResponse{}
 				rsp.fromBytes(hub.buffer[idx : idx+11])
+				//Move buffer forward
+				hub.buffer = hub.buffer[idx+11:]
 				// We apparently have to wait here for a bit, otherwise sending another command quickly will cause
 				// the PLM to freak out and reply with two NAKs.
 				time.Sleep(200 * time.Millisecond)

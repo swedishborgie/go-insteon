@@ -54,6 +54,18 @@ func (hub *Hub2245) SendCommand(hostCmd byte, addr Address, imCmd1 byte, imCmd2 
 	return hub.waitForResponse()
 }
 
+func (hub *Hub2245) SendExtendedCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*CommandResponse, error) {
+	plmCmd := buildExtPlmCommand(hostCmd, addr, imCmd1, imCmd2, userData)
+	uri := fmt.Sprintf("/%X?%X=I=%X", cmdTypeFull, plmCmd, cmdTypeFull)
+	if _, err := hub.doRequest(uri); err != nil {
+		return nil, err
+	}
+	if err := hub.waitForAck(plmCmd); err != nil {
+		return nil, err
+	}
+	return hub.waitForResponse()
+}
+
 // SendGroupCommand sends a command to a group.
 func (hub *Hub2245) SendGroupCommand(hostCmd byte, group byte) error {
 	uri := fmt.Sprintf("/%X?%02X%02X=I=%X", cmdTypeShort, hostCmd, group, cmdTypeShort)
@@ -93,18 +105,6 @@ func (hub *Hub2245) waitForResponse() (*CommandResponse, error) {
 		}
 	}
 	return nil, fmt.Errorf("timeout waiting for device")
-}
-
-// buildPlmCommand builds a power line modem command that gets sent by the
-// Insteon hub.
-func buildPlmCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte) []byte {
-	return []byte{
-		serialStart,
-		hostCmd,
-		addr[0], addr[1], addr[2],
-		0x0f,
-		imCmd1, imCmd2,
-	}
 }
 
 // doRequest submits a request to the Insteon hub.

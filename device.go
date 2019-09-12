@@ -1,5 +1,9 @@
 package insteon
 
+import (
+	"bytes"
+)
+
 type Address [3]byte
 
 // Device represents an Insteon device.
@@ -52,9 +56,14 @@ func (d *Device) TurnOffRamp(ramp bool) error {
 	return err
 }
 
+func (d *Device) SetFanLevel(level byte) error {
+	_, err := d.hub.SendExtendedCommand(cmdHostSendMsg, d.address, cmdControlOn, level, [14]byte{2})
+	return err
+}
+
 // Beep causes the device to beep.
-func (d *Device) Beep() error {
-	_, err := d.hub.SendCommand(cmdHostBeep, d.address, 0, 0)
+func (d *Device) Beep(duration byte) error {
+	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdControlBeep, duration)
 	return err
 }
 
@@ -68,14 +77,56 @@ func (d *Device) LED(on bool) error {
 	return err
 }
 
+type DeviceIdentification struct {
+	Category    byte
+	SubCategory byte
+	Firmware    byte
+}
+
+func (d *Device) GetDeviceID() (*DeviceIdentification, error) {
+	if err := d.hub.ClearBuffer(); err != nil {
+		return nil, err
+	}
+
+	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdControlID, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// We need to await the response from the device.
+	expect := []byte{serialStart, cmdIMStd, d.address[0], d.address[1], d.address[2]}
+	for i := 0; i < 5; i++ {
+		buf, err := d.hub.GetBuffer()
+		if err != nil {
+			return nil, err
+		}
+		idx := bytes.Index(buf, expect)
+		if idx >= 0 && idx+11 <= len(buf) {
+			rsp := buf[idx : idx+11]
+			return &DeviceIdentification{
+				Category:    rsp[5],
+				SubCategory: rsp[6],
+				Firmware:    rsp[7],
+			}, nil
+		}
+	}
+
+	return nil, ErrAckTimeout
+}
+
 // GetStatus gets the current power status of the device.
 func (d *Device) GetStatus() (*DeviceStatus, error) {
+	return d.GetStatusChannel(0)
+}
+
+// GetStatusChannel gets the current power status of the device.
+func (d *Device) GetStatusChannel(channel byte) (*DeviceStatus, error) {
 	err := d.hub.ClearBuffer()
 	if err != nil {
 		return nil, err
 	}
 
-	rsp, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdQueryStatusRequest, 0)
+	rsp, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdQueryStatusRequest, channel)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +134,7 @@ func (d *Device) GetStatus() (*DeviceStatus, error) {
 	return &DeviceStatus{
 		DeviceAddr: rsp.From,
 		ModemAddr:  rsp.To,
-		HopCount:   rsp.Flags,
+		HopCount:   byte(rsp.Flags),
 		Delta:      rsp.Cmd1,
 		Level:      rsp.Cmd2,
 	}, nil

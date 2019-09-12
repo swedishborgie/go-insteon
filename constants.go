@@ -49,6 +49,8 @@ const (
 	cmdHostBeep               byte = 0x77
 	cmdHostSetStatus          byte = 0x78
 
+	cmdControlStatus   byte = 0x03
+	cmdControlID       byte = 0x10
 	cmdControlOn       byte = 0x11
 	cmdControlFastOn   byte = 0x12
 	cmdControlOff      byte = 0x13
@@ -56,7 +58,8 @@ const (
 	cmdControlBright   byte = 0x15
 	cmdControlDim      byte = 0x16
 	cmdControlStartDim byte = 0x17
-	cmdcontrolStopDim  byte = 0x18
+	cmdControlStopDim  byte = 0x18
+	cmdControlBeep     byte = 0x30
 
 	cmdQueryIDRequest     byte = 0x10
 	cmdQueryStatusRequest byte = 0x19
