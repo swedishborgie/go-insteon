@@ -2,6 +2,7 @@ package insteon
 
 import (
 	"fmt"
+
 	"github.com/pkg/errors"
 )
 
@@ -45,7 +46,8 @@ func (flags CommandResponseFlags) MaxHops() int {
 }
 
 func (flags CommandResponseFlags) String() string {
-	return fmt.Sprintf("BroadcastNAK=%t, AllLink=%t, Acknowledgement=%t, Extended=%t, HopsLeft=%d, MaxHops=%d", flags.BroadcastNAK(), flags.AllLink(), flags.Acknowledgement(), flags.Extended(), flags.HopsLeft(), flags.MaxHops())
+	return fmt.Sprintf("BroadcastNAK=%t, AllLink=%t, Acknowledgement=%t, Extended=%t, HopsLeft=%d, MaxHops=%d",
+		flags.BroadcastNAK(), flags.AllLink(), flags.Acknowledgement(), flags.Extended(), flags.HopsLeft(), flags.MaxHops())
 }
 
 func (cr *CommandResponse) fromBytes(buffer []byte) {

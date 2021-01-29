@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-// Hub2245 is a reference to an Insteon Hub
+// Hub2245 is a reference to an Insteon Hub.
 type Hub2245 struct {
 	address  string
 	userName string
@@ -32,12 +32,20 @@ func (hub *Hub2245) GetBuffer() ([]byte, error) {
 		return nil, err
 	}
 
+	defer resp.Body.Close()
+
 	return parseBufferResponse(resp.Body)
 }
 
 // ClearBuffer clears the PLM buffer.
 func (hub *Hub2245) ClearBuffer() error {
-	_, err := hub.doRequest("/1?XB=M=1")
+	resp, err := hub.doRequest("/1?XB=M=1")
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
 	return err
 }
 
@@ -45,32 +53,46 @@ func (hub *Hub2245) ClearBuffer() error {
 func (hub *Hub2245) SendCommand(hostCmd byte, addr Address, imCmd1 byte, imCmd2 byte) (*CommandResponse, error) {
 	plmCmd := buildPlmCommand(hostCmd, addr, imCmd1, imCmd2)
 	uri := fmt.Sprintf("/%X?%X=I=%X", cmdTypeFull, plmCmd, cmdTypeFull)
-	if _, err := hub.doRequest(uri); err != nil {
+
+	if rsp, err := hub.doRequest(uri); err != nil {
 		return nil, err
+	} else {
+		defer rsp.Body.Close()
 	}
+
 	if err := hub.waitForAck(plmCmd); err != nil {
 		return nil, err
 	}
+
 	return hub.waitForResponse()
 }
 
 func (hub *Hub2245) SendExtendedCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*CommandResponse, error) {
 	plmCmd := buildExtPlmCommand(hostCmd, addr, imCmd1, imCmd2, userData)
 	uri := fmt.Sprintf("/%X?%X=I=%X", cmdTypeFull, plmCmd, cmdTypeFull)
+
 	if _, err := hub.doRequest(uri); err != nil {
 		return nil, err
 	}
+
 	if err := hub.waitForAck(plmCmd); err != nil {
 		return nil, err
 	}
+
 	return hub.waitForResponse()
 }
 
 // SendGroupCommand sends a command to a group.
 func (hub *Hub2245) SendGroupCommand(hostCmd byte, group byte) error {
 	uri := fmt.Sprintf("/%X?%02X%02X=I=%X", cmdTypeShort, hostCmd, group, cmdTypeShort)
-	_, err := hub.doRequest(uri)
-	return err
+	rsp, err := hub.doRequest(uri)
+	if err != nil {
+		return err
+	}
+
+	defer rsp.Body.Close()
+
+	return nil
 }
 
 func (hub *Hub2245) waitForAck(cmd []byte) error {
@@ -79,7 +101,9 @@ func (hub *Hub2245) waitForAck(cmd []byte) error {
 		if err != nil {
 			return err
 		}
+
 		idx := bytes.Index(buf, cmd)
+
 		if idx >= 0 && idx+len(cmd)+1 <= len(buf) {
 			if buf[idx+len(cmd)] == serialACK {
 				return nil
@@ -88,6 +112,7 @@ func (hub *Hub2245) waitForAck(cmd []byte) error {
 			}
 		}
 	}
+
 	return fmt.Errorf("timeout waiting for device")
 }
 
@@ -97,13 +122,16 @@ func (hub *Hub2245) waitForResponse() (*CommandResponse, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		idx := bytes.Index(buf, []byte{0x02, 0x50})
 		if idx >= 0 && idx+11 <= len(buf) {
 			rsp := &CommandResponse{}
 			rsp.fromBytes(buf[idx : idx+11])
+
 			return rsp, nil
 		}
 	}
+
 	return nil, fmt.Errorf("timeout waiting for device")
 }
 
@@ -113,16 +141,20 @@ func (hub *Hub2245) doRequest(uri string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	req.SetBasicAuth(hub.userName, hub.password)
+
 	client := &http.Client{}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
+
 	return resp, nil
 }
 
-// bufResponse wraps the XML response from buffstatus.xml
+// bufResponse wraps the XML response from buffstatus.xml.
 type bufResponse struct {
 	Buffer string `xml:"BS"`
 }
@@ -131,8 +163,8 @@ type bufResponse struct {
 func parseBufferResponse(body io.Reader) ([]byte, error) {
 	dec := xml.NewDecoder(body)
 	buf := &bufResponse{}
-	err := dec.Decode(buf)
-	if err != nil {
+
+	if err := dec.Decode(buf); err != nil {
 		return nil, err
 	}
 
@@ -140,5 +172,6 @@ func parseBufferResponse(body io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return bufBytes, nil
 }

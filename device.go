@@ -26,7 +26,9 @@ func (d *Device) TurnOnLevel(ramp bool, level byte) error {
 	if !ramp {
 		ctlCmd = cmdControlFastOn
 	}
+
 	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, ctlCmd, level)
+
 	return err
 }
 
@@ -52,18 +54,22 @@ func (d *Device) TurnOffRamp(ramp bool) error {
 	if !ramp {
 		ctlCmd = cmdControlFastOff
 	}
+
 	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, ctlCmd, 0)
+
 	return err
 }
 
 func (d *Device) SetFanLevel(level byte) error {
 	_, err := d.hub.SendExtendedCommand(cmdHostSendMsg, d.address, cmdControlOn, level, [14]byte{2})
+
 	return err
 }
 
 // Beep causes the device to beep.
 func (d *Device) Beep(duration byte) error {
 	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdControlBeep, duration)
+
 	return err
 }
 
@@ -73,7 +79,9 @@ func (d *Device) LED(on bool) error {
 	if !on {
 		ctlCmd = cmdHostLEDOff
 	}
+
 	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, ctlCmd, 0)
+
 	return err
 }
 
@@ -95,14 +103,18 @@ func (d *Device) GetDeviceID() (*DeviceIdentification, error) {
 
 	// We need to await the response from the device.
 	expect := []byte{serialStart, cmdIMStd, d.address[0], d.address[1], d.address[2]}
+
 	for i := 0; i < 5; i++ {
 		buf, err := d.hub.GetBuffer()
 		if err != nil {
 			return nil, err
 		}
+
 		idx := bytes.Index(buf, expect)
+
 		if idx >= 0 && idx+11 <= len(buf) {
 			rsp := buf[idx : idx+11]
+
 			return &DeviceIdentification{
 				Category:    rsp[5],
 				SubCategory: rsp[6],

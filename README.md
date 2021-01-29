@@ -1,7 +1,8 @@
 # go-insteon
 A Go library for interfacing with Insteon Hubs. Currently this library supports both
-the original 2242-222 (HUB1) and the 2245-222 (HUB2). This library is currently a work in
-progress but is currently of capable of supporting most typical use cases.
+the original 2242-222 (HUB1), the 2245-222 (HUB2), and the PLM Modems (2413S/2413U).
+This library is currently a work in progress but is currently of capable of supporting
+most typical use cases.
 
 Usage Example:
 
@@ -9,6 +10,8 @@ Usage Example:
         hub, err := insteon.NewHub2242("<address>:9761")
         // or
         // hub, err := insteon.NewHub2245("<address>", "<username>", "<password>")
+        // or
+        // hub, err := insteon.NewHubPLM("<serial port path>")
         if err != nil {
             return err
         }
