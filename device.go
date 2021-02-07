@@ -96,15 +96,51 @@ func (d *Device) GetProductData(ctx context.Context) error {
 	return nil
 }
 
-func (d *Device) GetDatabase(ctx context.Context) error {
+func (d *Device) GetDatabase(ctx context.Context) ([]*AllLinkRecord, error) {
 	data := [14]byte{0x01, 0x00, 0x0f, 0xff}
 
 	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0, data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	doneCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var db []*AllLinkRecord
+	var lastErr error
+	var lastAddr uint16
+
+	listener := func(event Event, err error) {
+		if err != nil {
+			lastErr = err
+			cancel()
+		}
+
+		if evt, ok := event.(*ExtCommandResponse); ok {
+			addr := uint16(evt.Data[2])<<8 + uint16(evt.Data[3])
+			dbEntry := &AllLinkRecord{}
+			dbEntry.fromBytes(evt.Data[3:])
+
+			if dbEntry.Flags.Last() {
+				cancel()
+			} else if addr != lastAddr {
+				db = append(db, dbEntry)
+			}
+
+			lastAddr = addr
+		}
+	}
+
+	d.hub.AddEventListener(listener)
+	defer d.hub.RemoveEventListener(listener)
+
+	select {
+	case <-doneCtx.Done():
+		return db, lastErr
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // GetStatus gets the current power status of the device.

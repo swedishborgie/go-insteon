@@ -172,7 +172,7 @@ func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 b
 		return nil, err
 	}
 
-	return hub.waitForResponse()
+	return hub.waitForResponse(ctx)
 }
 
 func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*StdCommandResponse, error) {
@@ -181,7 +181,7 @@ func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, 
 		return nil, err
 	}
 
-	return hub.waitForResponse()
+	return hub.waitForResponse(ctx)
 }
 
 func (hub *HubStreaming) SendX10(ctx context.Context, raw X10Raw, flags X10Flags) error {
@@ -360,10 +360,7 @@ func (hub *HubStreaming) directIMCommand(ctx context.Context, cmd []byte, expect
 	}
 }
 
-func (hub *HubStreaming) waitForResponse() (*StdCommandResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
+func (hub *HubStreaming) waitForResponse(ctx context.Context) (*StdCommandResponse, error) {
 	for {
 		select {
 		case err := <-hub.errChan:
@@ -377,7 +374,7 @@ func (hub *HubStreaming) waitForResponse() (*StdCommandResponse, error) {
 				return stdEvt, nil
 			}
 		case <-ctx.Done():
-			return nil, ErrAckTimeout
+			return nil, ctx.Err()
 		}
 	}
 }
