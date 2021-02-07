@@ -77,17 +77,13 @@ func (cr *ExtCommandResponse) Length() int {
 }
 
 type X10Response struct {
-	HouseCode byte
-	KeyCode   byte
-	UnitCode  bool
-	Command   bool
+	raw   X10Raw
+	flags X10Flags
 }
 
 func (cr *X10Response) fromBytes(buffer []byte) {
-	cr.HouseCode = buffer[2] >> 4
-	cr.KeyCode = buffer[2] & 0xf
-	cr.Command = buffer[3]&0x80 > 0
-	cr.UnitCode = buffer[3]&0x7F > 0
+	cr.raw = X10Raw(buffer[2])
+	cr.flags = X10Flags(buffer[3])
 }
 
 func (cr *X10Response) ID() byte {
@@ -185,6 +181,10 @@ func (cr *AllLinkRecord) fromBytes(buffer []byte) {
 	copy(cr.Data[:], buffer[7:10])
 }
 
+func (cr *AllLinkRecord) toBytes() []byte {
+	return []byte{byte(cr.Flags), cr.Group, cr.Address[0], cr.Address[1], cr.Address[2], cr.Data[0], cr.Data[1], cr.Data[2]}
+}
+
 func (cr *AllLinkRecord) ID() byte {
 	return cmdIMAllLinkRecord
 }
@@ -207,6 +207,25 @@ func (cr *AllLinkCleanup) ID() byte {
 
 func (cr *AllLinkCleanup) Length() int {
 	return 3
+}
+
+type DatabaseRecord struct {
+	MemAddr uint16
+	Record  *AllLinkRecord
+}
+
+func (cr *DatabaseRecord) fromBytes(buffer []byte) {
+	cr.MemAddr = uint16(buffer[2])<<8 + uint16(buffer[3])
+	cr.Record = &AllLinkRecord{}
+	cr.Record.fromBytes(buffer[2:])
+}
+
+func (cr *DatabaseRecord) ID() byte {
+	return cmdIMDatabaseRecord
+}
+
+func (cr *DatabaseRecord) Length() int {
+	return 12
 }
 
 type CommandResponseFlags byte

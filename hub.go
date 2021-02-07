@@ -37,18 +37,26 @@ func (mc ModemConfiguration) String() string {
 type Hub interface {
 	SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (*StdCommandResponse, error)
 	SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*StdCommandResponse, error)
+	SendX10(context.Context, X10Raw, X10Flags) error
 	SendGroupCommand(ctx context.Context, hostCmd byte, group byte) error
 	AddEventListener(EventListener)
 	RemoveEventListener(EventListener)
 	SetCommLogger(CommLogger)
 
-	GetInfo() (*ModemInfo, error)
-	GetModemConfig() (ModemConfiguration, error)
-	SetModemConfig(cfg ModemConfiguration) error
-	StartAllLink(LinkCode, byte) (*AllLinkCompleted, error)
-	CancelAllLink() error
-	GetAllLinkDatabase() ([]*AllLinkRecord, error)
-	Beep() error
+	GetInfo(context.Context) (*ModemInfo, error)
+	SetDeviceCategory(context.Context, Category, SubCategory, byte) error
+	Sleep(context.Context) error
+	Reset(context.Context) error
+	GetModemConfig(context.Context) (ModemConfiguration, error)
+	SetModemConfig(context.Context, ModemConfiguration) error
+	StartAllLink(context.Context, LinkCode, byte) (*AllLinkCompleted, error)
+	CancelAllLink(context.Context) error
+	GetAllLinkDatabase(context.Context) ([]*AllLinkRecord, error)
+	GetLastSender(context.Context) (*AllLinkRecord, error)
+	Beep(context.Context) error
+	ReadDB(context.Context, uint16) (*DatabaseRecord, error)
+	WriteDB(context.Context, uint16, *AllLinkRecord) error
+	SetLED(context.Context, bool) error
 }
 
 type EventListener func(Event, error)
@@ -78,20 +86,30 @@ type CommLogger func(CommDirection, []byte)
 
 // buildPlmCommand builds a power line modem command that gets sent by the
 // Insteon hub.
-func buildPlmCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte) []byte {
+func buildPlmCommand(addr Address, imCmd1, imCmd2 byte) []byte {
 	return []byte{
 		serialStart,
-		hostCmd,
+		cmdHostSendMsg,
 		addr[0], addr[1], addr[2],
 		CommandFlagHopsLeftThree | CommandFlagRetransmitMax,
 		imCmd1, imCmd2,
 	}
 }
 
-func buildExtPlmCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userData [14]byte) []byte {
+func buildGroupPlmCommand(group byte, imCmd1, imCmd2 byte) []byte {
 	return []byte{
 		serialStart,
-		hostCmd,
+		cmdHostSendMsg,
+		0, 0, group,
+		CommandFlagBroadcast | CommandFlagGroup | CommandFlagHopsLeftThree | CommandFlagRetransmitMax,
+		imCmd1, imCmd2,
+	}
+}
+
+func buildExtPlmCommand(addr Address, imCmd1, imCmd2 byte, userData [14]byte) []byte {
+	return []byte{
+		serialStart,
+		cmdHostSendMsg,
 		addr[0], addr[1], addr[2],
 		CommandFlagExtended | CommandFlagAck | CommandFlagHopsLeftThree | CommandFlagRetransmitMax,
 		imCmd1, imCmd2,

@@ -8,11 +8,13 @@ const (
 	serialNAK   byte = 0x15
 )
 
+// These are used for the newer hubs.
 const (
 	cmdTypeShort byte = 0
 	cmdTypeFull  byte = 3
 )
 
+// These are commands the modem can send to the host.
 const (
 	cmdIMStd              byte = 0x50
 	cmdIMExt              byte = 0x51
@@ -23,7 +25,11 @@ const (
 	cmdIMAllLinkCleanFail byte = 0x56
 	cmdIMAllLinkRecord    byte = 0x57
 	cmdIMAllLinkCleanup   byte = 0x58
+	cmdIMDatabaseRecord   byte = 0x59
+)
 
+// These are commands the host can send to the modem.
+const (
 	cmdHostGetInfo              byte = 0x60
 	cmdHostAllLink              byte = 0x61
 	cmdHostSendMsg              byte = 0x62
@@ -49,7 +55,10 @@ const (
 	cmdHostWriteDB              byte = 0x76
 	cmdHostBeep                 byte = 0x77
 	cmdHostSetStatus            byte = 0x78
+)
 
+// These are commands the modem can send to other Insteon devices.
+const (
 	cmdControlProduct  byte = 0x03
 	cmdControlPing     byte = 0x0F
 	cmdControlID       byte = 0x10

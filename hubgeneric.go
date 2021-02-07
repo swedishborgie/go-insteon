@@ -43,10 +43,10 @@ func NewHubStreaming(stream io.ReadWriteCloser) (*HubStreaming, error) {
 	return hub, nil
 }
 
-func (hub *HubStreaming) GetInfo() (*ModemInfo, error) {
+func (hub *HubStreaming) GetInfo(ctx context.Context) (*ModemInfo, error) {
 	cmd := []byte{serialStart, cmdHostGetInfo}
 
-	rsp, err := hub.directIMCommand(context.Background(), cmd, 9)
+	rsp, err := hub.directIMCommand(ctx, cmd, 9)
 	if err != nil {
 		return nil, err
 	}
@@ -58,10 +58,10 @@ func (hub *HubStreaming) GetInfo() (*ModemInfo, error) {
 	return mi, nil
 }
 
-func (hub *HubStreaming) GetModemConfig() (ModemConfiguration, error) {
+func (hub *HubStreaming) GetModemConfig(ctx context.Context) (ModemConfiguration, error) {
 	cmd := []byte{serialStart, cmdHostIMCfg}
 
-	rsp, err := hub.directIMCommand(context.Background(), cmd, 6)
+	rsp, err := hub.directIMCommand(ctx, cmd, 6)
 	if err != nil {
 		return 0, err
 	}
@@ -69,10 +69,10 @@ func (hub *HubStreaming) GetModemConfig() (ModemConfiguration, error) {
 	return ModemConfiguration(rsp[2]), nil
 }
 
-func (hub *HubStreaming) SetModemConfig(cfg ModemConfiguration) error {
+func (hub *HubStreaming) SetModemConfig(ctx context.Context, cfg ModemConfiguration) error {
 	cmd := []byte{serialStart, cmdHostSetIMCFG, byte(cfg)}
 
-	_, err := hub.directIMCommand(context.Background(), cmd, 4)
+	_, err := hub.directIMCommand(ctx, cmd, 4)
 	if err != nil {
 		return err
 	}
@@ -80,10 +80,10 @@ func (hub *HubStreaming) SetModemConfig(cfg ModemConfiguration) error {
 	return nil
 }
 
-func (hub *HubStreaming) StartAllLink(code LinkCode, group byte) (*AllLinkCompleted, error) {
+func (hub *HubStreaming) StartAllLink(ctx context.Context, code LinkCode, group byte) (*AllLinkCompleted, error) {
 	cmd := []byte{serialStart, cmdHostStartAllLink, byte(code), group}
 
-	_, err := hub.directIMCommand(context.Background(), cmd, 5)
+	_, err := hub.directIMCommand(ctx, cmd, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -96,14 +96,16 @@ func (hub *HubStreaming) StartAllLink(code LinkCode, group byte) (*AllLinkComple
 			}
 		case err := <-hub.errChan:
 			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 }
 
-func (hub *HubStreaming) CancelAllLink() error {
+func (hub *HubStreaming) CancelAllLink(ctx context.Context) error {
 	cmd := []byte{serialStart, cmdHostCancelAllLink}
 
-	_, err := hub.directIMCommand(context.Background(), cmd, 3)
+	_, err := hub.directIMCommand(ctx, cmd, 3)
 	if err != nil {
 		return err
 	}
@@ -111,10 +113,10 @@ func (hub *HubStreaming) CancelAllLink() error {
 	return nil
 }
 
-func (hub *HubStreaming) Beep() error {
+func (hub *HubStreaming) Beep(ctx context.Context) error {
 	cmd := []byte{serialStart, cmdHostBeep}
 
-	_, err := hub.directIMCommand(context.Background(), cmd, 3)
+	_, err := hub.directIMCommand(ctx, cmd, 3)
 	if err != nil {
 		return err
 	}
@@ -122,10 +124,10 @@ func (hub *HubStreaming) Beep() error {
 	return nil
 }
 
-func (hub *HubStreaming) GetAllLinkDatabase() ([]*AllLinkRecord, error) {
+func (hub *HubStreaming) GetAllLinkDatabase(ctx context.Context) ([]*AllLinkRecord, error) {
 	cmd := []byte{serialStart, cmdHostFirstAllLinkRecord}
 
-	if _, err := hub.directIMCommand(context.Background(), cmd, 3); err != nil {
+	if _, err := hub.directIMCommand(ctx, cmd, 3); err != nil {
 		return nil, err
 	}
 
@@ -149,6 +151,8 @@ func (hub *HubStreaming) GetAllLinkDatabase() ([]*AllLinkRecord, error) {
 			}
 		case err := <-hub.errChan:
 			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 }
@@ -163,7 +167,7 @@ func (hub *HubStreaming) manageAllLinkRecord(alCmd ManageAllLinkCommand, flags A
 }
 
 func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (*StdCommandResponse, error) {
-	cmd := buildPlmCommand(cmdHostSendMsg, addr, imCmd1, imCmd2)
+	cmd := buildPlmCommand(addr, imCmd1, imCmd2)
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
 	}
@@ -172,7 +176,7 @@ func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 b
 }
 
 func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*StdCommandResponse, error) {
-	cmd := buildExtPlmCommand(cmdHostSendMsg, addr, imCmd1, imCmd2, userData)
+	cmd := buildExtPlmCommand(addr, imCmd1, imCmd2, userData)
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
 	}
@@ -180,8 +184,132 @@ func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, 
 	return hub.waitForResponse()
 }
 
-func (hub *HubStreaming) SendGroupCommand(context.Context, byte, byte) error {
+func (hub *HubStreaming) SendX10(ctx context.Context, raw X10Raw, flags X10Flags) error {
+	cmd := []byte{serialStart, cmdHostSendX10, byte(raw), byte(flags)}
+
+	if _, err := hub.directIMCommand(ctx, cmd, 5); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (hub *HubStreaming) SendGroupCommand(ctx context.Context, cmd1 byte, group byte) error {
+	cmd := buildGroupPlmCommand(group, cmd1, 0)
+
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *HubStreaming) SetDeviceCategory(ctx context.Context, cat Category, sub SubCategory, fw byte) error {
+	cmd := []byte{serialStart, cmdHostDeviceCategory, byte(cat), byte(sub), fw}
+
+	if _, err := hub.directIMCommand(ctx, cmd, 6); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *HubStreaming) Sleep(ctx context.Context) error {
+	cmd := []byte{serialStart, cmdHostRFSleep}
+
+	if _, err := hub.directIMCommand(ctx, cmd, 3); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *HubStreaming) Reset(ctx context.Context) error {
+	cmd := []byte{serialStart, cmdHostResetIM}
+
+	if _, err := hub.directIMCommand(ctx, cmd, 3); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *HubStreaming) ReadDB(ctx context.Context, addr uint16) (*DatabaseRecord, error) {
+	// The address must be aligned.
+	if addr&0xF != 0 && addr&0xF != 0x8 {
+		return nil, errors.New("address must be aligned to an 8 byte boundary")
+	}
+
+	cmd := []byte{serialStart, cmdHostReadDB, byte(addr & 0xFF00 >> 8), byte(addr & 0xFF)}
+
+	_, err := hub.directIMCommand(ctx, cmd, 5)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		select {
+		case evt := <-hub.events:
+			if db, ok := evt.(*DatabaseRecord); ok {
+				return db, nil
+			}
+		case err := <-hub.errChan:
+			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (hub *HubStreaming) WriteDB(ctx context.Context, addr uint16, rec *AllLinkRecord) error {
+	// The address must be aligned.
+	if addr&0xF != 0 && addr&0xF != 0x8 {
+		return errors.New("address must be aligned to an 8 byte boundary")
+	}
+
+	cmd := []byte{serialStart, cmdHostWriteDB, byte(addr & 0xFF00 >> 8), byte(addr & 0xFF)}
+	cmd = append(cmd, rec.toBytes()...)
+
+	_, err := hub.directIMCommand(ctx, cmd, len(cmd)+1)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *HubStreaming) SetLED(ctx context.Context, on bool) error {
+	cmd := []byte{serialStart, cmdHostLEDOff}
+	if on {
+		cmd[1] = cmdHostLEDOn
+	}
+
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *HubStreaming) GetLastSender(ctx context.Context) (*AllLinkRecord, error) {
+	cmd := []byte{serialStart, cmdHostAllLinkRecordSender}
+
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
+		return nil, err
+	}
+
+	for {
+		select {
+		case evt := <-hub.events:
+			if db, ok := evt.(*AllLinkRecord); ok {
+				return db, nil
+			}
+		case err := <-hub.errChan:
+			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 func (hub *HubStreaming) AddEventListener(listener EventListener) {
@@ -369,6 +497,7 @@ func imCommand(cmd byte) Event {
 		&AllLinkCleanupFailure{},
 		&AllLinkRecord{},
 		&AllLinkCleanup{},
+		&DatabaseRecord{},
 	}
 
 	for _, c := range cmdList {
