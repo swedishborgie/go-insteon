@@ -1,10 +1,15 @@
 package insteon
 
 import (
-	"bytes"
+	"context"
+	"fmt"
 )
 
 type Address [3]byte
+
+func (a Address) String() string {
+	return fmt.Sprintf("%02X:%02X:%02X", a[0], a[1], a[2])
+}
 
 // Device represents an Insteon device.
 type Device struct {
@@ -21,66 +26,47 @@ func NewDevice(hub Hub, addr Address) (*Device, error) {
 }
 
 // TurnOnLevel turns on a dimmable device set to a specific level.
-func (d *Device) TurnOnLevel(ramp bool, level byte) error {
+func (d *Device) TurnOnLevel(ctx context.Context, ramp bool, level byte) error {
 	ctlCmd := cmdControlOn
 	if !ramp {
 		ctlCmd = cmdControlFastOn
 	}
 
-	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, ctlCmd, level)
+	_, err := d.hub.SendCommand(ctx, d.address, ctlCmd, level)
 
 	return err
 }
 
 // TurnOn turns on a device.
-func (d *Device) TurnOn() error {
-	return d.TurnOnRamp(false)
+func (d *Device) TurnOn(ctx context.Context) error {
+	return d.TurnOnRamp(ctx, false)
 }
 
 // TurnOnRamp turns on a device with optional ramp. Ramp only works if the
 // device is dimmable.
-func (d *Device) TurnOnRamp(ramp bool) error {
-	return d.TurnOnLevel(ramp, 0xFF)
+func (d *Device) TurnOnRamp(ctx context.Context, ramp bool) error {
+	return d.TurnOnLevel(ctx, ramp, 0xFF)
 }
 
 // TurnOff turns off a device.
-func (d *Device) TurnOff() error {
-	return d.TurnOffRamp(false)
+func (d *Device) TurnOff(ctx context.Context) error {
+	return d.TurnOffRamp(ctx, false)
 }
 
 // TurnOffRamp turns off a device with optional ramp.
-func (d *Device) TurnOffRamp(ramp bool) error {
+func (d *Device) TurnOffRamp(ctx context.Context, ramp bool) error {
 	ctlCmd := cmdControlOff
 	if !ramp {
 		ctlCmd = cmdControlFastOff
 	}
 
-	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, ctlCmd, 0)
+	_, err := d.hub.SendCommand(ctx, d.address, ctlCmd, 0)
 
 	return err
 }
 
-func (d *Device) SetFanLevel(level byte) error {
-	_, err := d.hub.SendExtendedCommand(cmdHostSendMsg, d.address, cmdControlOn, level, [14]byte{2})
-
-	return err
-}
-
-// Beep causes the device to beep.
-func (d *Device) Beep(duration byte) error {
-	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdControlBeep, duration)
-
-	return err
-}
-
-// LED turns the device LED on or off.
-func (d *Device) LED(on bool) error {
-	ctlCmd := cmdHostLEDOn
-	if !on {
-		ctlCmd = cmdHostLEDOff
-	}
-
-	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, ctlCmd, 0)
+func (d *Device) SetFanLevel(ctx context.Context, level byte) error {
+	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlOn, level, [14]byte{2})
 
 	return err
 }
@@ -91,54 +77,44 @@ type DeviceIdentification struct {
 	Firmware    byte
 }
 
-func (d *Device) GetDeviceID() (*DeviceIdentification, error) {
-	if err := d.hub.ClearBuffer(); err != nil {
-		return nil, err
-	}
-
-	_, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdControlID, 0)
+func (d *Device) Ping(ctx context.Context) error {
+	_, err := d.hub.SendCommand(ctx, d.address, cmdControlPing, 0)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// We need to await the response from the device.
-	expect := []byte{serialStart, cmdIMStd, d.address[0], d.address[1], d.address[2]}
+	return nil
+}
 
-	for i := 0; i < 5; i++ {
-		buf, err := d.hub.GetBuffer()
-		if err != nil {
-			return nil, err
-		}
-
-		idx := bytes.Index(buf, expect)
-
-		if idx >= 0 && idx+11 <= len(buf) {
-			rsp := buf[idx : idx+11]
-
-			return &DeviceIdentification{
-				Category:    rsp[5],
-				SubCategory: rsp[6],
-				Firmware:    rsp[7],
-			}, nil
-		}
+func (d *Device) GetProductData(ctx context.Context) error {
+	data := [14]byte{}
+	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlProduct, 2, data)
+	if err != nil {
+		return err
 	}
 
-	return nil, ErrAckTimeout
+	return nil
+}
+
+func (d *Device) GetDatabase(ctx context.Context) error {
+	data := [14]byte{0x01, 0x00, 0x0f, 0xff}
+
+	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // GetStatus gets the current power status of the device.
-func (d *Device) GetStatus() (*DeviceStatus, error) {
-	return d.GetStatusChannel(0)
+func (d *Device) GetStatus(ctx context.Context) (*DeviceStatus, error) {
+	return d.GetStatusChannel(ctx, 0)
 }
 
 // GetStatusChannel gets the current power status of the device.
-func (d *Device) GetStatusChannel(channel byte) (*DeviceStatus, error) {
-	err := d.hub.ClearBuffer()
-	if err != nil {
-		return nil, err
-	}
-
-	rsp, err := d.hub.SendCommand(cmdHostSendMsg, d.address, cmdQueryStatusRequest, channel)
+func (d *Device) GetStatusChannel(ctx context.Context, channel byte) (*DeviceStatus, error) {
+	rsp, err := d.hub.SendCommand(ctx, d.address, cmdQueryStatusRequest, channel)
 	if err != nil {
 		return nil, err
 	}

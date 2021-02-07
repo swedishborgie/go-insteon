@@ -1,6 +1,7 @@
 package insteon
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -11,62 +12,69 @@ var (
 	ErrAckTimeout = errors.New("ack timeout")
 )
 
-type CommandResponse struct {
-	From  Address
-	To    Address
-	Flags CommandResponseFlags
-	Cmd1  byte
-	Cmd2  byte
+type ModemConfiguration byte
+
+func (mc ModemConfiguration) AutoLink() bool {
+	return !(mc&0x80 > 0)
 }
 
-type CommandResponseFlags byte
-
-func (flags CommandResponseFlags) BroadcastNAK() bool {
-	return flags&0x80 > 0
+func (mc ModemConfiguration) Monitor() bool {
+	return mc&0x40 > 0
 }
 
-func (flags CommandResponseFlags) AllLink() bool {
-	return flags&0x40 > 0
+func (mc ModemConfiguration) AutoLED() bool {
+	return !(mc&0x20 > 0)
 }
 
-func (flags CommandResponseFlags) Acknowledgement() bool {
-	return flags&0x20 > 0
+func (mc ModemConfiguration) DeadMan() bool {
+	return !(mc&0x10 > 0)
 }
 
-func (flags CommandResponseFlags) Extended() bool {
-	return flags&0x10 > 0
-}
-
-func (flags CommandResponseFlags) HopsLeft() int {
-	return int((flags & 0xC) >> 2)
-}
-
-func (flags CommandResponseFlags) MaxHops() int {
-	return int(flags & 0x3)
-}
-
-func (flags CommandResponseFlags) String() string {
-	return fmt.Sprintf("BroadcastNAK=%t, AllLink=%t, Acknowledgement=%t, Extended=%t, HopsLeft=%d, MaxHops=%d",
-		flags.BroadcastNAK(), flags.AllLink(), flags.Acknowledgement(), flags.Extended(), flags.HopsLeft(), flags.MaxHops())
-}
-
-func (cr *CommandResponse) fromBytes(buffer []byte) {
-	copy(cr.From[:], buffer[2:5])
-	copy(cr.To[:], buffer[5:8])
-	cr.Flags = CommandResponseFlags(buffer[8])
-	cr.Cmd1 = buffer[9]
-	cr.Cmd2 = buffer[10]
+func (mc ModemConfiguration) String() string {
+	return fmt.Sprintf("AutoLink=%t, Monitor=%t, AutoLED=%t, DeadMan=%t", mc.AutoLink(), mc.Monitor(), mc.AutoLED(), mc.DeadMan())
 }
 
 type Hub interface {
-	SendCommand(hostCmd byte, addr Address, imCmd1 byte, imCmd2 byte) (*CommandResponse, error)
-	SendExtendedCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*CommandResponse, error)
-	SendGroupCommand(hostCmd byte, group byte) error
-	GetBuffer() ([]byte, error)
-	ClearBuffer() error
-	waitForAck(cmd []byte) error
-	waitForResponse() (*CommandResponse, error)
+	SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (*StdCommandResponse, error)
+	SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*StdCommandResponse, error)
+	SendGroupCommand(ctx context.Context, hostCmd byte, group byte) error
+	AddEventListener(EventListener)
+	RemoveEventListener(EventListener)
+	SetCommLogger(CommLogger)
+
+	GetInfo() (*ModemInfo, error)
+	GetModemConfig() (ModemConfiguration, error)
+	SetModemConfig(cfg ModemConfiguration) error
+	StartAllLink(LinkCode, byte) (*AllLinkCompleted, error)
+	CancelAllLink() error
+	GetAllLinkDatabase() ([]*AllLinkRecord, error)
+	Beep() error
 }
+
+type EventListener func(Event, error)
+
+type CommDirection int
+
+const (
+	CommDirectionHostToIM = iota
+	CommDirectionIMToHost
+	CommDirectionUnknown
+)
+
+func (cd CommDirection) String() string {
+	switch cd {
+	case CommDirectionIMToHost:
+		return "IM to Host"
+	case CommDirectionHostToIM:
+		return "Host to IM"
+	case CommDirectionUnknown:
+		fallthrough
+	default:
+		return "Unknown"
+	}
+}
+
+type CommLogger func(CommDirection, []byte)
 
 // buildPlmCommand builds a power line modem command that gets sent by the
 // Insteon hub.
@@ -75,7 +83,7 @@ func buildPlmCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte) []byte {
 		serialStart,
 		hostCmd,
 		addr[0], addr[1], addr[2],
-		0x0f,
+		CommandFlagHopsLeftThree | CommandFlagRetransmitMax,
 		imCmd1, imCmd2,
 	}
 }
@@ -85,9 +93,23 @@ func buildExtPlmCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userDat
 		serialStart,
 		hostCmd,
 		addr[0], addr[1], addr[2],
-		0x15,
+		CommandFlagExtended | CommandFlagAck | CommandFlagHopsLeftThree | CommandFlagRetransmitMax,
 		imCmd1, imCmd2,
 		userData[0], userData[1], userData[2], userData[3], userData[4], userData[5], userData[6], userData[7],
 		userData[8], userData[9], userData[10], userData[11], userData[12], userData[13],
 	}
+}
+
+type ModemInfo struct {
+	Address         Address
+	Category        Category
+	SubCategory     SubCategory
+	FirmwareVersion byte
+}
+
+func (m *ModemInfo) fromBytes(b []byte) {
+	m.Address = [3]byte{b[0], b[1], b[2]}
+	m.Category = Category(b[3])
+	m.SubCategory = SubCategory(b[4])
+	m.FirmwareVersion = b[5]
 }

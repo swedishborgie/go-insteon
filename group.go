@@ -1,5 +1,7 @@
 package insteon
 
+import "context"
+
 // Group represents a device grouop.
 type Group struct {
 	groupID byte
@@ -15,11 +17,11 @@ func NewGroup(hub Hub, groupID byte) *Group {
 }
 
 // TurnOn turns on the group.
-func (g *Group) TurnOn() error {
-	return g.hub.SendGroupCommand(cmdControlOn, g.groupID)
+func (g *Group) TurnOn(ctx context.Context) error {
+	return g.hub.SendGroupCommand(ctx, cmdControlOn, g.groupID)
 }
 
 // TurnOff turns off the group.
-func (g *Group) TurnOff() error {
-	return g.hub.SendGroupCommand(cmdControlOff, g.groupID)
+func (g *Group) TurnOff(ctx context.Context) error {
+	return g.hub.SendGroupCommand(ctx, cmdControlOff, g.groupID)
 }
