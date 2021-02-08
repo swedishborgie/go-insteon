@@ -1,9 +1,13 @@
 package insteon
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 type Address [3]byte
@@ -184,6 +188,41 @@ func (d *Device) StartAllLink(ctx context.Context, group byte) error {
 	_, err := d.hub.SendCommand(ctx, d.address, cmdControlLink, group)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (d *Device) ModifyAllLinkEntry(ctx context.Context, alCmd ManageAllLinkCommand, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) error {
+	db, err := d.GetDatabase(ctx)
+	if err != nil {
+		return err
+	}
+
+	var foundEntry *AllLinkRecord
+	var foundAddr uint16
+
+	for memAddr, db := range db {
+		if bytes.Equal(db.Address[:], addr[:]) {
+			foundEntry = db
+			foundAddr = memAddr
+		}
+	}
+
+	log.Printf("found device %+v at %d", foundEntry, foundAddr)
+
+	switch alCmd {
+	case ManageAllLinkAddResponder:
+	case ManageAllLinkAddController:
+	case ManageAllLinkDelete:
+	case ManageAllLinkUpdate:
+
+	case ManageAllLinkFindFirst:
+		fallthrough
+	case ManageAllLinkFindNext:
+		fallthrough
+	default:
+		return errors.New("unsupported modification type")
 	}
 
 	return nil
