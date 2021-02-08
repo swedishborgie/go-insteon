@@ -147,50 +147,31 @@ func (d *Device) SetName(ctx context.Context, name string) error {
 	return nil
 }
 
-func (d *Device) GetDatabase(ctx context.Context) ([]*AllLinkRecord, error) {
-	data := [14]byte{0x01, 0x00, 0x0f, 0xff}
-
+func (d *Device) GetDatabase(ctx context.Context) (map[uint16]*AllLinkRecord, error) {
+	data := [14]byte{}
 	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0, data)
 	if err != nil {
 		return nil, err
 	}
 
-	doneCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	db := make(map[uint16]*AllLinkRecord)
 
-	var db []*AllLinkRecord
-	var lastErr error
-	var lastAddr uint16
-
-	listener := func(event Event, err error) {
+	for {
+		rsp, err := d.hub.Expect(ctx, &ExtCommandResponse{})
 		if err != nil {
-			lastErr = err
-			cancel()
+			return nil, err
 		}
 
-		if evt, ok := event.(*ExtCommandResponse); ok {
-			addr := uint16(evt.data[2])<<8 + uint16(evt.data[3])
-			dbEntry := &AllLinkRecord{}
-			dbEntry.fromBytes(evt.data[3:])
+		evt := rsp.(*ExtCommandResponse)
+		addr := uint16(evt.data[2])<<8 + uint16(evt.data[3])
+		dbEntry := &AllLinkRecord{}
+		dbEntry.fromBytes(evt.data[3:])
 
-			if dbEntry.Flags.Last() {
-				cancel()
-			} else if addr != lastAddr {
-				db = append(db, dbEntry)
-			}
-
-			lastAddr = addr
+		if dbEntry.Flags.Last() {
+			return db, nil
 		}
-	}
 
-	d.hub.AddEventListener(listener)
-	defer d.hub.RemoveEventListener(listener)
-
-	select {
-	case <-doneCtx.Done():
-		return db, lastErr
-	case <-ctx.Done():
-		return nil, ctx.Err()
+		db[addr] = dbEntry
 	}
 }
 
