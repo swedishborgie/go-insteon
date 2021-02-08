@@ -157,6 +157,16 @@ func (hub *HubStreaming) GetAllLinkDatabase(ctx context.Context) ([]*AllLinkReco
 	}
 }
 
+func (hub *HubStreaming) ModifyAllLinkEntry(ctx context.Context, alCmd ManageAllLinkCommand, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) error {
+	cmd := []byte{serialStart, cmdHostMngAllLink, byte(alCmd), byte(flags), group, addr[0], addr[1], addr[2], data[0], data[1], data[2]}
+
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (hub *HubStreaming) manageAllLinkRecord(alCmd ManageAllLinkCommand, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) error {
 	cmd := []byte{serialStart, cmdHostMngAllLink, byte(alCmd), byte(flags), group, addr[0], addr[1], addr[2], data[0], data[1], data[2]}
 	if _, err := hub.directIMCommand(context.Background(), cmd, 12); err != nil {

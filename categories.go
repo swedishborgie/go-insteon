@@ -166,6 +166,7 @@ var products = map[Category]map[SubCategory]Product{
 		0x13: Product{ProductKey: 0x000033, Description: "ICON SwitchLinc Relay for Lixar/Bell Canada [2676R-B]"},
 		0x14: Product{ProductKey: 0x000045, Description: "In-LineLinc Relay with Sense [2475S2]"},
 		0x15: Product{ProductKey: 0x000047, Description: "SwitchLinc Relay with Sense [2476S2]"},
+		0x1a: Product{ProductKey: 0x000000, Description: "ToggleLinc On/Off Switch [2466SW]"},
 	},
 	CategoryNetworkBridge: {
 		0x01: Product{ProductKey: 0x000000, Description: "PowerLinc Serial [2414S]"},

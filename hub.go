@@ -52,6 +52,7 @@ type Hub interface {
 	SetModemConfig(context.Context, ModemConfiguration) error
 	StartAllLink(context.Context, LinkCode, byte) (*AllLinkCompleted, error)
 	CancelAllLink(context.Context) error
+	ModifyAllLinkEntry(context.Context, ManageAllLinkCommand, AllLinkRecordFlags, byte, Address, [3]byte) error
 	GetAllLinkDatabase(context.Context) ([]*AllLinkRecord, error)
 	GetLastSender(context.Context) (*AllLinkRecord, error)
 	Beep(context.Context) error

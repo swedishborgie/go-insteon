@@ -109,6 +109,11 @@ const (
 
 type AllLinkRecordFlags byte
 
+const (
+	AllLinkRecordFlagsInUse     AllLinkRecordFlags = 0x80
+	AllLinkRecordFlagsContoller AllLinkRecordFlags = 0x40
+)
+
 func (al AllLinkRecordFlags) InUse() bool {
 	return al&0x80 > 0
 }

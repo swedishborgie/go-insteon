@@ -180,6 +180,50 @@ func (d *Device) GetStatus(ctx context.Context) (*DeviceStatus, error) {
 	return d.GetStatusChannel(ctx, 0)
 }
 
+func (d *Device) StartAllLink(ctx context.Context, group byte) error {
+	_, err := d.hub.SendCommand(ctx, d.address, cmdControlLink, group)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type DeviceOpFlags byte
+
+func (f DeviceOpFlags) ProgramLock() bool {
+	return f&0x1 > 0
+}
+
+func (f DeviceOpFlags) LEDTransmit() bool {
+	return f&0x2 > 0
+}
+
+func (f DeviceOpFlags) ResumeDim() bool {
+	return f&0x4 > 0
+}
+
+func (f DeviceOpFlags) LED() bool {
+	return f&0x10 == 0
+}
+
+func (f DeviceOpFlags) LoadSense() bool {
+	return f&0x20 == 0
+}
+
+func (f DeviceOpFlags) String() string {
+	return fmt.Sprintf("ProgramLock=%t, LEDTransmit=%t, ResumeDim=%t, LED=%t, LoadSense=%t", f.ProgramLock(), f.LEDTransmit(), f.ResumeDim(), f.LED(), f.LoadSense())
+}
+
+func (d *Device) GetOperatingFlags(ctx context.Context) (DeviceOpFlags, error) {
+	rsp, err := d.hub.SendCommand(ctx, d.address, cmdControlGetOpFlags, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	return DeviceOpFlags(rsp.Cmd2()), nil
+}
+
 // GetStatusChannel gets the current power status of the device.
 func (d *Device) GetStatusChannel(ctx context.Context, channel byte) (*DeviceStatus, error) {
 	rsp, err := d.hub.SendCommand(ctx, d.address, cmdQueryStatusRequest, channel)
