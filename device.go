@@ -3,6 +3,7 @@ package insteon
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Address [3]byte
@@ -23,6 +24,10 @@ func NewDevice(hub Hub, addr Address) (*Device, error) {
 		address: addr,
 		hub:     hub,
 	}, nil
+}
+
+func (d *Device) Address() Address {
+	return d.address
 }
 
 // TurnOnLevel turns on a dimmable device set to a specific level.
@@ -86,8 +91,54 @@ func (d *Device) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (d *Device) GetProductData(ctx context.Context) error {
+func (d *Device) GetProductData(ctx context.Context) (*Product, error) {
+	_, err := d.hub.SendCommand(ctx, d.address, cmdControlProduct, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	evt, err := d.hub.Expect(ctx, &ExtCommandResponse{})
+	if err != nil {
+		return nil, err
+	}
+
+	data := evt.(*ExtCommandResponse).Data()
+	prd := &Product{}
+	prd.ProductKey = uint(data[1])<<16 + uint(data[2])<<8 + uint(data[3])
+	prd.Category = Category(data[4])
+	prd.SubCategory = SubCategory(data[5])
+	prd.Description = GetProductDesc(prd.Category, prd.SubCategory)
+
+	return prd, nil
+}
+
+func (d *Device) GetName(ctx context.Context) (string, error) {
+	_, err := d.hub.SendCommand(ctx, d.address, cmdControlProduct, 2)
+	if err != nil {
+		return "", err
+	}
+
+	evt, err := d.hub.Expect(ctx, &ExtCommandResponse{})
+	if err != nil {
+		return "", err
+	}
+
+	data := string(evt.(*ExtCommandResponse).Data())
+
+	return strings.Trim(data, "\x00"), nil
+}
+
+func (d *Device) SetName(ctx context.Context, name string) error {
+	if len(name) > 14 {
+		name = name[0:14]
+	}
+
 	data := [14]byte{}
+
+	for idx := 0; idx < len(name); idx++ {
+		data[idx] = name[idx]
+	}
+
 	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlProduct, 2, data)
 	if err != nil {
 		return err
@@ -118,9 +169,9 @@ func (d *Device) GetDatabase(ctx context.Context) ([]*AllLinkRecord, error) {
 		}
 
 		if evt, ok := event.(*ExtCommandResponse); ok {
-			addr := uint16(evt.Data[2])<<8 + uint16(evt.Data[3])
+			addr := uint16(evt.data[2])<<8 + uint16(evt.data[3])
 			dbEntry := &AllLinkRecord{}
-			dbEntry.fromBytes(evt.Data[3:])
+			dbEntry.fromBytes(evt.data[3:])
 
 			if dbEntry.Flags.Last() {
 				cancel()
@@ -156,11 +207,11 @@ func (d *Device) GetStatusChannel(ctx context.Context, channel byte) (*DeviceSta
 	}
 
 	return &DeviceStatus{
-		DeviceAddr: rsp.From,
-		ModemAddr:  rsp.To,
-		HopCount:   byte(rsp.Flags),
-		Delta:      rsp.Cmd1,
-		Level:      rsp.Cmd2,
+		DeviceAddr: rsp.From(),
+		ModemAddr:  rsp.To(),
+		HopCount:   byte(rsp.Flags()),
+		Delta:      rsp.Cmd1(),
+		Level:      rsp.Cmd2(),
 	}, nil
 }
 

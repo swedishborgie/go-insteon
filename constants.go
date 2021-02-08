@@ -59,20 +59,24 @@ const (
 
 // These are commands the modem can send to other Insteon devices.
 const (
-	cmdControlProduct  byte = 0x03
-	cmdControlPing     byte = 0x0F
-	cmdControlID       byte = 0x10
-	cmdControlOn       byte = 0x11
-	cmdControlFastOn   byte = 0x12
-	cmdControlOff      byte = 0x13
-	cmdControlFastOff  byte = 0x14
-	cmdControlBright   byte = 0x15
-	cmdControlDim      byte = 0x16
-	cmdControlStartDim byte = 0x17
-	cmdControlStopDim  byte = 0x18
-	cmdControlStatus   byte = 0x19
-	cmdControlAllLink  byte = 0x2F
-	cmdControlBeep     byte = 0x30
+	cmdControlProduct    byte = 0x03
+	cmdControlLink       byte = 0x09
+	cmdControlUnlink     byte = 0x0a
+	cmdControlPing       byte = 0x0F
+	cmdControlID         byte = 0x10
+	cmdControlOn         byte = 0x11
+	cmdControlFastOn     byte = 0x12
+	cmdControlOff        byte = 0x13
+	cmdControlFastOff    byte = 0x14
+	cmdControlBright     byte = 0x15
+	cmdControlDim        byte = 0x16
+	cmdControlStartDim   byte = 0x17
+	cmdControlStopDim    byte = 0x18
+	cmdControlStatus     byte = 0x19
+	cmdControlGetOpFlags byte = 0x1f
+	cmdControlSetOpFlags byte = 0x20
+	cmdControlAllLink    byte = 0x2F
+	cmdControlBeep       byte = 0x30
 
 	cmdQueryIDRequest     byte = 0x10
 	cmdQueryStatusRequest byte = 0x19

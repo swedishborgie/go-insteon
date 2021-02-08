@@ -26,20 +26,53 @@ func (a *Ack) Length() int {
 	return len(a.Response)
 }
 
+type CommandResponse interface {
+	From() Address
+	To() Address
+	Flags() CommandResponseFlags
+	Cmd1() byte
+	Cmd2() byte
+	Data() []byte
+}
+
 type StdCommandResponse struct {
-	From  Address
-	To    Address
-	Flags CommandResponseFlags
-	Cmd1  byte
-	Cmd2  byte
+	from  Address
+	to    Address
+	flags CommandResponseFlags
+	cmd1  byte
+	cmd2  byte
+}
+
+func (cr *StdCommandResponse) From() Address {
+	return cr.from
+}
+
+func (cr *StdCommandResponse) To() Address {
+	return cr.to
+}
+
+func (cr *StdCommandResponse) Flags() CommandResponseFlags {
+	return cr.flags
+}
+
+func (cr *StdCommandResponse) Cmd1() byte {
+	return cr.cmd1
+}
+
+func (cr *StdCommandResponse) Cmd2() byte {
+	return cr.cmd2
+}
+
+func (cr *StdCommandResponse) Data() []byte {
+	return nil
 }
 
 func (cr *StdCommandResponse) fromBytes(buffer []byte) {
-	copy(cr.From[:], buffer[2:5])
-	copy(cr.To[:], buffer[5:8])
-	cr.Flags = CommandResponseFlags(buffer[8])
-	cr.Cmd1 = buffer[9]
-	cr.Cmd2 = buffer[10]
+	copy(cr.from[:], buffer[2:5])
+	copy(cr.to[:], buffer[5:8])
+	cr.flags = CommandResponseFlags(buffer[8])
+	cr.cmd1 = buffer[9]
+	cr.cmd2 = buffer[10]
 }
 
 func (cr *StdCommandResponse) ID() byte {
@@ -51,21 +84,17 @@ func (cr *StdCommandResponse) Length() int {
 }
 
 type ExtCommandResponse struct {
-	From  Address
-	To    Address
-	Flags CommandResponseFlags
-	Cmd1  byte
-	Cmd2  byte
-	Data  [14]byte
+	StdCommandResponse
+	data [14]byte
 }
 
 func (cr *ExtCommandResponse) fromBytes(buffer []byte) {
-	copy(cr.From[:], buffer[2:5])
-	copy(cr.To[:], buffer[5:8])
-	cr.Flags = CommandResponseFlags(buffer[8])
-	cr.Cmd1 = buffer[9]
-	cr.Cmd2 = buffer[10]
-	copy(cr.Data[:], buffer[11:24])
+	cr.StdCommandResponse.fromBytes(buffer)
+	copy(cr.data[:], buffer[11:24])
+}
+
+func (cr *ExtCommandResponse) Data() []byte {
+	return cr.data[:]
 }
 
 func (cr *ExtCommandResponse) ID() byte {

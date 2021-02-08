@@ -166,7 +166,7 @@ func (hub *HubStreaming) manageAllLinkRecord(alCmd ManageAllLinkCommand, flags A
 	return nil
 }
 
-func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (*StdCommandResponse, error) {
+func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (CommandResponse, error) {
 	cmd := buildPlmCommand(addr, imCmd1, imCmd2)
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 b
 	return hub.waitForResponse(ctx)
 }
 
-func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*StdCommandResponse, error) {
+func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (CommandResponse, error) {
 	cmd := buildExtPlmCommand(addr, imCmd1, imCmd2, userData)
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
@@ -232,6 +232,21 @@ func (hub *HubStreaming) Reset(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (hub *HubStreaming) Expect(ctx context.Context, evt Event) (Event, error) {
+	for {
+		select {
+		case e := <-hub.events:
+			if e.ID() == evt.ID() {
+				return e, nil
+			}
+		case err := <-hub.errChan:
+			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 func (hub *HubStreaming) ReadDB(ctx context.Context, addr uint16) (*DatabaseRecord, error) {
@@ -360,7 +375,7 @@ func (hub *HubStreaming) directIMCommand(ctx context.Context, cmd []byte, expect
 	}
 }
 
-func (hub *HubStreaming) waitForResponse(ctx context.Context) (*StdCommandResponse, error) {
+func (hub *HubStreaming) waitForResponse(ctx context.Context) (CommandResponse, error) {
 	for {
 		select {
 		case err := <-hub.errChan:
@@ -372,6 +387,10 @@ func (hub *HubStreaming) waitForResponse(ctx context.Context) (*StdCommandRespon
 				time.Sleep(StreamingCommandPause)
 
 				return stdEvt, nil
+			} else if extEvt, ok := evt.(*ExtCommandResponse); ok {
+				time.Sleep(StreamingCommandPause)
+
+				return extEvt, nil
 			}
 		case <-ctx.Done():
 			return nil, ctx.Err()

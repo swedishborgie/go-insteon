@@ -35,8 +35,9 @@ func (mc ModemConfiguration) String() string {
 }
 
 type Hub interface {
-	SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (*StdCommandResponse, error)
-	SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*StdCommandResponse, error)
+	SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (CommandResponse, error)
+	SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (CommandResponse, error)
+	Expect(ctx context.Context, evt Event) (Event, error)
 	SendX10(context.Context, X10Raw, X10Flags) error
 	SendGroupCommand(ctx context.Context, hostCmd byte, group byte) error
 	AddEventListener(EventListener)

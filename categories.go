@@ -96,23 +96,18 @@ type Product struct {
 	Description string
 }
 
-func GetProduct(cat Category, sub SubCategory) *Product {
+func GetProductDesc(cat Category, sub SubCategory) string {
 	subCats, ok := products[cat]
 	if !ok {
-		return nil
+		return ""
 	}
 
 	prd, ok := subCats[sub]
 	if !ok {
-		return nil
+		return ""
 	}
 
-	return &Product{
-		Category:    cat,
-		SubCategory: sub,
-		ProductKey:  prd.ProductKey,
-		Description: prd.Description,
-	}
+	return prd.Description
 }
 
 var products = map[Category]map[SubCategory]Product{
@@ -151,6 +146,7 @@ var products = map[Category]map[SubCategory]Product{
 		0x1B: Product{ProductKey: 0x000050, Description: "KeypadLinc 6-button Dimmer [2486DWH6]"},
 		0x1C: Product{ProductKey: 0x000051, Description: "KeypadLinc 8-button Dimmer [2486DWH8]"},
 		0x1D: Product{ProductKey: 0x000052, Description: "SwitchLinc Dimmer 1200W [2476D]"},
+		0x3a: Product{ProductKey: 0x0, Description: "LED Bulb [2672-222]"},
 	},
 	CategorySwitchedLighting: {
 		0x05: Product{ProductKey: 0x000042, Description: "KeypadLinc Relay – 8-Button defaulted mode [2486SWH8]"},
