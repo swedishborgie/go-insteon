@@ -112,6 +112,7 @@ type AllLinkRecordFlags byte
 const (
 	AllLinkRecordFlagsInUse     AllLinkRecordFlags = 0x80
 	AllLinkRecordFlagsContoller AllLinkRecordFlags = 0x40
+	AllLinkRecordFlagsLast      AllLinkRecordFlags = 0x2
 )
 
 func (al AllLinkRecordFlags) InUse() bool {

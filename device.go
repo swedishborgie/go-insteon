@@ -6,8 +6,14 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
+)
+
+var (
+	ErrDBEntryNotFound      = errors.New("unable to find database entry")
+	ErrDBEntryAlreadyExists = errors.New("database entry for this device already exists")
 )
 
 type Address [3]byte
@@ -133,7 +139,8 @@ func (d *Device) GetName(ctx context.Context) (string, error) {
 }
 
 func (d *Device) SetName(ctx context.Context, name string) error {
-	if len(name) > 14 {
+	const maxNameLength = 14
+	if len(name) > maxNameLength {
 		name = name[0:14]
 	}
 
@@ -153,8 +160,8 @@ func (d *Device) SetName(ctx context.Context, name string) error {
 
 func (d *Device) GetDatabase(ctx context.Context) (map[uint16]*AllLinkRecord, error) {
 	data := [14]byte{}
-	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0, data)
-	if err != nil {
+
+	if _, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0, data); err != nil {
 		return nil, err
 	}
 
@@ -193,39 +200,193 @@ func (d *Device) StartAllLink(ctx context.Context, group byte) error {
 	return nil
 }
 
-func (d *Device) ModifyAllLinkEntry(ctx context.Context, alCmd ManageAllLinkCommand, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) error {
+func (d *Device) DeleteAllLink(ctx context.Context, addr Address, group byte, controller bool) error {
 	db, err := d.GetDatabase(ctx)
 	if err != nil {
 		return err
 	}
 
-	var foundEntry *AllLinkRecord
-	var foundAddr uint16
+	memAddr, lastAddr := findAllLinkDBEntry(db, addr, group, controller)
+	if memAddr == 0 {
+		return errors.Wrapf(ErrDBEntryNotFound, "address: %s, group: %d, controller: %t", addr, group, controller)
+	}
 
-	for memAddr, db := range db {
-		if bytes.Equal(db.Address[:], addr[:]) {
-			foundEntry = db
-			foundAddr = memAddr
+	secondLastAddr := uint16(0)
+
+	for a := range db {
+		if a > memAddr && a < lastAddr {
+			secondLastAddr = a
 		}
 	}
 
-	log.Printf("found device %+v at %d", foundEntry, foundAddr)
+	log.Printf("memAddr=%x, lastAddr=%x, secondLast=%x", memAddr, lastAddr, secondLastAddr)
 
-	switch alCmd {
-	case ManageAllLinkAddResponder:
-	case ManageAllLinkAddController:
-	case ManageAllLinkDelete:
-	case ManageAllLinkUpdate:
+	// If this isn't the last entry in the list.
+	if memAddr != lastAddr {
+		// We need to swap the entry we want to delete with the current last entry.
+		keepEntry := db[lastAddr]
 
-	case ManageAllLinkFindFirst:
-		fallthrough
-	case ManageAllLinkFindNext:
-		fallthrough
-	default:
-		return errors.New("unsupported modification type")
+		keepFlags := keepEntry.Flags
+		if secondLastAddr == memAddr {
+			keepFlags |= AllLinkRecordFlagsLast
+		} else {
+			keepFlags &= 0xFD
+		}
+
+		log.Printf("performing swap: %x <-> %x", memAddr, lastAddr)
+
+		if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+			d.modifyDbCommand(memAddr, keepFlags, keepEntry.Group, keepEntry.Address, keepEntry.Data)); err != nil {
+			return err
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Mark the last entry as empty.
+	log.Printf("marking empty: %x", lastAddr)
+
+	if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+		d.modifyDbCommand(lastAddr, 0, 0, [3]byte{}, [3]byte{})); err != nil {
+		return err
+	}
+
+	// If we haven't already done this,
+	if secondLastAddr != memAddr && secondLastAddr > 0 {
+		time.Sleep(500 * time.Millisecond)
+
+		// We need to re-write the new last entry to toggle the last flag.
+		newLast := db[secondLastAddr]
+		log.Printf("marking last: %x", secondLastAddr)
+
+		if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+			d.modifyDbCommand(secondLastAddr, newLast.Flags|AllLinkRecordFlagsLast,
+				newLast.Group, newLast.Address, newLast.Data)); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func (d *Device) UpdateAllLink(ctx context.Context, addr Address, group byte, data [3]byte, controller bool) error {
+	db, err := d.GetDatabase(ctx)
+	if err != nil {
+		return err
+	}
+
+	memAddr, lastAddr := findAllLinkDBEntry(db, addr, group, controller)
+	if memAddr == 0 {
+		return errors.Wrapf(ErrDBEntryNotFound, "address: %s, group: %d, controller: %t", addr, group, controller)
+	}
+
+	flags := AllLinkRecordFlagsInUse
+	if memAddr == lastAddr {
+		flags |= AllLinkRecordFlagsLast
+	}
+
+	if controller {
+		flags |= AllLinkRecordFlagsContoller
+	}
+
+	_, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+		d.modifyDbCommand(memAddr, flags, group, addr, data))
+
+	return err
+}
+
+func (d *Device) AddAllLink(ctx context.Context, addr Address, group byte, data [3]byte, controller bool) error {
+	db, err := d.GetDatabase(ctx)
+	if err != nil {
+		return err
+	}
+
+	memAddr, lastAddr := findAllLinkDBEntry(db, addr, group, controller)
+	if memAddr != 0 {
+		return errors.Wrapf(ErrDBEntryAlreadyExists, "address: %s, group: %d, controller: %t", addr, group, controller)
+	}
+
+	// We need to do two things here, we need to add our new entry and then update the previous last entry to make sure
+	// the last entry flag is cleared.
+	memAddr = lastAddr + 0x8
+
+	flags := AllLinkRecordFlagsInUse | AllLinkRecordFlagsLast
+	if controller {
+		flags |= AllLinkRecordFlagsContoller
+	}
+
+	// Create new last entry.
+	if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+		d.modifyDbCommand(memAddr, flags, group, addr, data)); err != nil {
+		return err
+	}
+
+	oldLast := db[lastAddr]
+	if oldLast.Flags&AllLinkRecordFlagsLast > 0 {
+		// We need to clear the last flag from the previous last entry.
+		if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+			d.modifyDbCommand(lastAddr, oldLast.Flags&0xFD, oldLast.Group, oldLast.Address, oldLast.Data)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func findAllLinkDBEntry(db map[uint16]*AllLinkRecord, addr Address, group byte, controller bool) (uint16, uint16) {
+	var rByte AllLinkRecordFlags
+	if controller {
+		rByte = AllLinkRecordFlagsContoller
+	}
+
+	foundAddr := uint16(0)
+
+	lastAddr := uint16(0xFFFF)
+
+	for memAddr, d := range db {
+		if bytes.Equal(d.Address[:], addr[:]) && d.Flags&AllLinkRecordFlagsContoller == rByte && d.Group == group {
+			foundAddr = memAddr
+		}
+
+		if memAddr < lastAddr {
+			lastAddr = memAddr
+		}
+	}
+
+	return foundAddr, lastAddr
+}
+
+func (d *Device) modifyDbCommand(memAddr uint16, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) [14]byte {
+	cmd := [14]byte{
+		0,                      // Unused
+		0x2,                    // Modify
+		byte(memAddr>>8) & 0xF, // Address High Nibble
+		byte(memAddr),          // Address Low Byte
+		0,                      // Unused
+		byte(flags),            // Flags
+		group,                  // Group
+		addr[0],                // Address
+		addr[1],                //
+		addr[2],                //
+		data[0],                // Data
+		data[1],                //
+		data[2],                //
+		0,                      // CRC
+	}
+
+	cmd[13] = calculateCRC(append([]byte{cmdControlAllLink, 0}, cmd[:]...))
+
+	return cmd
+}
+
+func calculateCRC(buf []byte) byte {
+	ckSum := uint(1)
+
+	for _, c := range buf {
+		ckSum += uint(c)
+	}
+
+	return ^byte(ckSum)
 }
 
 type DeviceOpFlags byte
