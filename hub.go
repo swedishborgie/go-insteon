@@ -14,20 +14,27 @@ var (
 
 type ModemConfiguration byte
 
+const (
+	ModemConfigurationAutoLink ModemConfiguration = 0x80
+	ModemConfigurationMonitor  ModemConfiguration = 0x40
+	ModemConfigurationAutoLED  ModemConfiguration = 0x20
+	ModemConfigurationDeadMan  ModemConfiguration = 0x10
+)
+
 func (mc ModemConfiguration) AutoLink() bool {
-	return !(mc&0x80 > 0)
+	return !(mc&ModemConfigurationAutoLink > 0)
 }
 
 func (mc ModemConfiguration) Monitor() bool {
-	return mc&0x40 > 0
+	return mc&ModemConfigurationMonitor > 0
 }
 
 func (mc ModemConfiguration) AutoLED() bool {
-	return !(mc&0x20 > 0)
+	return !(mc&ModemConfigurationAutoLED > 0)
 }
 
 func (mc ModemConfiguration) DeadMan() bool {
-	return !(mc&0x10 > 0)
+	return !(mc&ModemConfigurationDeadMan > 0)
 }
 
 func (mc ModemConfiguration) String() string {
