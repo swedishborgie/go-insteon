@@ -47,7 +47,7 @@ func (d *Device) TurnOnLevel(ctx context.Context, ramp bool, level byte) error {
 		ctlCmd = cmdControlFastOn
 	}
 
-	_, err := d.hub.SendCommand(ctx, d.address, ctlCmd, level)
+	_, err := d.hub.SendMessage(ctx, d.address, ctlCmd, level)
 
 	return err
 }
@@ -75,13 +75,13 @@ func (d *Device) TurnOffRamp(ctx context.Context, ramp bool) error {
 		ctlCmd = cmdControlFastOff
 	}
 
-	_, err := d.hub.SendCommand(ctx, d.address, ctlCmd, 0)
+	_, err := d.hub.SendMessage(ctx, d.address, ctlCmd, 0)
 
 	return err
 }
 
 func (d *Device) SetFanLevel(ctx context.Context, level byte) error {
-	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlOn, level, [14]byte{2})
+	_, err := d.hub.SendExtendedMessage(ctx, d.address, cmdControlOn, level, [14]byte{2})
 
 	return err
 }
@@ -93,7 +93,7 @@ type DeviceIdentification struct {
 }
 
 func (d *Device) Ping(ctx context.Context) error {
-	_, err := d.hub.SendCommand(ctx, d.address, cmdControlPing, 0)
+	_, err := d.hub.SendMessage(ctx, d.address, cmdControlPing, 0)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (d *Device) Ping(ctx context.Context) error {
 }
 
 func (d *Device) GetProductData(ctx context.Context) (*Product, error) {
-	_, err := d.hub.SendCommand(ctx, d.address, cmdControlProduct, 0)
+	_, err := d.hub.SendMessage(ctx, d.address, cmdControlProduct, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (d *Device) GetProductData(ctx context.Context) (*Product, error) {
 }
 
 func (d *Device) GetName(ctx context.Context) (string, error) {
-	_, err := d.hub.SendCommand(ctx, d.address, cmdControlProduct, 2)
+	_, err := d.hub.SendMessage(ctx, d.address, cmdControlProduct, 2)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +150,7 @@ func (d *Device) SetName(ctx context.Context, name string) error {
 		data[idx] = name[idx]
 	}
 
-	_, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlProduct, 2, data)
+	_, err := d.hub.SendExtendedMessage(ctx, d.address, cmdControlProduct, 2, data)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func (d *Device) SetName(ctx context.Context, name string) error {
 func (d *Device) GetDatabase(ctx context.Context) (map[uint16]*AllLinkRecord, error) {
 	data := [14]byte{}
 
-	if _, err := d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0, data); err != nil {
+	if _, err := d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0, data); err != nil {
 		return nil, err
 	}
 
@@ -192,7 +192,7 @@ func (d *Device) GetStatus(ctx context.Context) (*DeviceStatus, error) {
 }
 
 func (d *Device) StartAllLink(ctx context.Context, group byte) error {
-	_, err := d.hub.SendCommand(ctx, d.address, cmdControlLink, group)
+	_, err := d.hub.SendMessage(ctx, d.address, cmdControlLink, group)
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func (d *Device) DeleteAllLink(ctx context.Context, addr Address, group byte, co
 
 		log.Printf("performing swap: %x <-> %x", memAddr, lastAddr)
 
-		if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+		if _, err = d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0,
 			d.modifyDbCommand(memAddr, keepFlags, keepEntry.Group, keepEntry.Address, keepEntry.Data)); err != nil {
 			return err
 		}
@@ -246,7 +246,7 @@ func (d *Device) DeleteAllLink(ctx context.Context, addr Address, group byte, co
 	// Mark the last entry as empty.
 	log.Printf("marking empty: %x", lastAddr)
 
-	if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+	if _, err = d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0,
 		d.modifyDbCommand(lastAddr, 0, 0, [3]byte{}, [3]byte{})); err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func (d *Device) DeleteAllLink(ctx context.Context, addr Address, group byte, co
 		newLast := db[secondLastAddr]
 		log.Printf("marking last: %x", secondLastAddr)
 
-		if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+		if _, err = d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0,
 			d.modifyDbCommand(secondLastAddr, newLast.Flags|AllLinkRecordFlagsLast,
 				newLast.Group, newLast.Address, newLast.Data)); err != nil {
 			return err
@@ -289,7 +289,7 @@ func (d *Device) UpdateAllLink(ctx context.Context, addr Address, group byte, da
 		flags |= AllLinkRecordFlagsContoller
 	}
 
-	_, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+	_, err = d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0,
 		d.modifyDbCommand(memAddr, flags, group, addr, data))
 
 	return err
@@ -316,7 +316,7 @@ func (d *Device) AddAllLink(ctx context.Context, addr Address, group byte, data 
 	}
 
 	// Create new last entry.
-	if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+	if _, err = d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0,
 		d.modifyDbCommand(memAddr, flags, group, addr, data)); err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (d *Device) AddAllLink(ctx context.Context, addr Address, group byte, data 
 	oldLast := db[lastAddr]
 	if oldLast.Flags&AllLinkRecordFlagsLast > 0 {
 		// We need to clear the last flag from the previous last entry.
-		if _, err = d.hub.SendExtendedCommand(ctx, d.address, cmdControlAllLink, 0,
+		if _, err = d.hub.SendExtendedMessage(ctx, d.address, cmdControlAllLink, 0,
 			d.modifyDbCommand(lastAddr, oldLast.Flags&0xFD, oldLast.Group, oldLast.Address, oldLast.Data)); err != nil {
 			return err
 		}
@@ -416,7 +416,7 @@ func (f DeviceOpFlags) String() string {
 }
 
 func (d *Device) GetOperatingFlags(ctx context.Context) (DeviceOpFlags, error) {
-	rsp, err := d.hub.SendCommand(ctx, d.address, cmdControlGetOpFlags, 0)
+	rsp, err := d.hub.SendMessage(ctx, d.address, cmdControlGetOpFlags, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -426,7 +426,7 @@ func (d *Device) GetOperatingFlags(ctx context.Context) (DeviceOpFlags, error) {
 
 // GetStatusChannel gets the current power status of the device.
 func (d *Device) GetStatusChannel(ctx context.Context, channel byte) (*DeviceStatus, error) {
-	rsp, err := d.hub.SendCommand(ctx, d.address, cmdQueryStatusRequest, channel)
+	rsp, err := d.hub.SendMessage(ctx, d.address, cmdQueryStatusRequest, channel)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+var ErrUnexpectedAckByte = errors.New("unexpected acknowledgement byte")
+
+// HubStreaming is a generic hub implementation that assumes we have a bi-directional data stream to the PLM modem.
 type HubStreaming struct {
 	stream    io.ReadWriteCloser
 	buffer    []byte
@@ -19,18 +22,7 @@ type HubStreaming struct {
 	logger    CommLogger
 }
 
-type expectAck struct {
-	cmd    []byte
-	length int
-}
-
-var ErrUnexpectedAckByte = errors.New("unexpected acknowledgement byte")
-
-const (
-	StreamingCommandPause = 200 * time.Millisecond
-	ChannelBufferSize     = 10
-)
-
+// NewHubStreaming creates a new streaming hub implementation around the passed in stream implementation.
 func NewHubStreaming(stream io.ReadWriteCloser) (*HubStreaming, error) {
 	hub := &HubStreaming{
 		stream:  stream,
@@ -46,7 +38,9 @@ func NewHubStreaming(stream io.ReadWriteCloser) (*HubStreaming, error) {
 func (hub *HubStreaming) GetInfo(ctx context.Context) (*ModemInfo, error) {
 	cmd := []byte{serialStart, cmdHostGetInfo}
 
-	rsp, err := hub.directIMCommand(ctx, cmd, 9)
+	const expectedLength = 9
+
+	rsp, err := hub.directIMCommand(ctx, cmd, expectedLength)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +55,9 @@ func (hub *HubStreaming) GetInfo(ctx context.Context) (*ModemInfo, error) {
 func (hub *HubStreaming) GetModemConfig(ctx context.Context) (ModemConfiguration, error) {
 	cmd := []byte{serialStart, cmdHostIMCfg}
 
-	rsp, err := hub.directIMCommand(ctx, cmd, 6)
+	const expectedBytes = 6
+
+	rsp, err := hub.directIMCommand(ctx, cmd, expectedBytes)
 	if err != nil {
 		return 0, err
 	}
@@ -72,7 +68,7 @@ func (hub *HubStreaming) GetModemConfig(ctx context.Context) (ModemConfiguration
 func (hub *HubStreaming) SetModemConfig(ctx context.Context, cfg ModemConfiguration) error {
 	cmd := []byte{serialStart, cmdHostSetIMCFG, byte(cfg)}
 
-	_, err := hub.directIMCommand(ctx, cmd, 4)
+	_, err := hub.directIMCommand(ctx, cmd, len(cmd)+1)
 	if err != nil {
 		return err
 	}
@@ -83,7 +79,7 @@ func (hub *HubStreaming) SetModemConfig(ctx context.Context, cfg ModemConfigurat
 func (hub *HubStreaming) StartAllLink(ctx context.Context, code LinkCode, group byte) (*AllLinkCompleted, error) {
 	cmd := []byte{serialStart, cmdHostStartAllLink, byte(code), group}
 
-	_, err := hub.directIMCommand(ctx, cmd, 5)
+	_, err := hub.directIMCommand(ctx, cmd, len(cmd)+1)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +101,7 @@ func (hub *HubStreaming) StartAllLink(ctx context.Context, code LinkCode, group 
 func (hub *HubStreaming) CancelAllLink(ctx context.Context) error {
 	cmd := []byte{serialStart, cmdHostCancelAllLink}
 
-	_, err := hub.directIMCommand(ctx, cmd, 3)
+	_, err := hub.directIMCommand(ctx, cmd, len(cmd)+1)
 	if err != nil {
 		return err
 	}
@@ -116,7 +112,7 @@ func (hub *HubStreaming) CancelAllLink(ctx context.Context) error {
 func (hub *HubStreaming) Beep(ctx context.Context) error {
 	cmd := []byte{serialStart, cmdHostBeep}
 
-	_, err := hub.directIMCommand(ctx, cmd, 3)
+	_, err := hub.directIMCommand(ctx, cmd, len(cmd)+1)
 	if err != nil {
 		return err
 	}
@@ -127,7 +123,7 @@ func (hub *HubStreaming) Beep(ctx context.Context) error {
 func (hub *HubStreaming) GetAllLinkDatabase(ctx context.Context) ([]*AllLinkRecord, error) {
 	cmd := []byte{serialStart, cmdHostFirstAllLinkRecord}
 
-	if _, err := hub.directIMCommand(ctx, cmd, 3); err != nil {
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
 	}
 
@@ -140,7 +136,7 @@ func (hub *HubStreaming) GetAllLinkDatabase(ctx context.Context) ([]*AllLinkReco
 				records = append(records, alEvt)
 
 				cmd := []byte{serialStart, cmdHostGetNextAllLinkRecord}
-				if _, err := hub.directIMCommand(context.Background(), cmd, 3); err != nil {
+				if _, err := hub.directIMCommand(context.Background(), cmd, len(cmd)+1); err != nil {
 					if errors.Is(err, ErrNotReady) {
 						// All set!
 						return records, nil
@@ -157,8 +153,12 @@ func (hub *HubStreaming) GetAllLinkDatabase(ctx context.Context) ([]*AllLinkReco
 	}
 }
 
-func (hub *HubStreaming) ModifyAllLinkEntry(ctx context.Context, alCmd ManageAllLinkCommand, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) error {
-	cmd := []byte{serialStart, cmdHostMngAllLink, byte(alCmd), byte(flags), group, addr[0], addr[1], addr[2], data[0], data[1], data[2]}
+func (hub *HubStreaming) ModifyAllLinkEntry(ctx context.Context, alCmd ManageAllLinkCommand, flags AllLinkRecordFlags,
+	group byte, addr Address, data [3]byte) error {
+	cmd := []byte{
+		serialStart, cmdHostMngAllLink, byte(alCmd), byte(flags), group,
+		addr[0], addr[1], addr[2], data[0], data[1], data[2],
+	}
 
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return err
@@ -168,7 +168,10 @@ func (hub *HubStreaming) ModifyAllLinkEntry(ctx context.Context, alCmd ManageAll
 }
 
 func (hub *HubStreaming) manageAllLinkRecord(alCmd ManageAllLinkCommand, flags AllLinkRecordFlags, group byte, addr Address, data [3]byte) error {
-	cmd := []byte{serialStart, cmdHostMngAllLink, byte(alCmd), byte(flags), group, addr[0], addr[1], addr[2], data[0], data[1], data[2]}
+	cmd := []byte{
+		serialStart, cmdHostMngAllLink, byte(alCmd), byte(flags), group, addr[0], addr[1], addr[2],
+		data[0], data[1], data[2],
+	}
 	if _, err := hub.directIMCommand(context.Background(), cmd, 12); err != nil {
 		return err
 	}
@@ -176,7 +179,8 @@ func (hub *HubStreaming) manageAllLinkRecord(alCmd ManageAllLinkCommand, flags A
 	return nil
 }
 
-func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (CommandResponse, error) {
+// SendMessage sends a standard length message to a remote device on the Insteon network.
+func (hub *HubStreaming) SendMessage(ctx context.Context, addr Address, imCmd1 byte, imCmd2 byte) (CommandResponse, error) {
 	cmd := buildPlmCommand(addr, imCmd1, imCmd2)
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
@@ -185,7 +189,8 @@ func (hub *HubStreaming) SendCommand(ctx context.Context, addr Address, imCmd1 b
 	return hub.waitForResponse(ctx)
 }
 
-func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (CommandResponse, error) {
+// SendExtendedMessage sends an extended length message to a remotes device on the Insteon network.
+func (hub *HubStreaming) SendExtendedMessage(ctx context.Context, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (CommandResponse, error) {
 	cmd := buildExtPlmCommand(addr, imCmd1, imCmd2, userData)
 	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return nil, err
@@ -197,7 +202,7 @@ func (hub *HubStreaming) SendExtendedCommand(ctx context.Context, addr Address, 
 func (hub *HubStreaming) SendX10(ctx context.Context, raw X10Raw, flags X10Flags) error {
 	cmd := []byte{serialStart, cmdHostSendX10, byte(raw), byte(flags)}
 
-	if _, err := hub.directIMCommand(ctx, cmd, 5); err != nil {
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return err
 	}
 
@@ -217,7 +222,7 @@ func (hub *HubStreaming) SendGroupCommand(ctx context.Context, cmd1 byte, group 
 func (hub *HubStreaming) SetDeviceCategory(ctx context.Context, cat Category, sub SubCategory, fw byte) error {
 	cmd := []byte{serialStart, cmdHostDeviceCategory, byte(cat), byte(sub), fw}
 
-	if _, err := hub.directIMCommand(ctx, cmd, 6); err != nil {
+	if _, err := hub.directIMCommand(ctx, cmd, len(cmd)+1); err != nil {
 		return err
 	}
 

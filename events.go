@@ -287,3 +287,8 @@ func (flags CommandResponseFlags) String() string {
 	return fmt.Sprintf("BroadcastNAK=%t, AllLink=%t, Acknowledgement=%t, Extended=%t, HopsLeft=%d, MaxHops=%d",
 		flags.BroadcastNAK(), flags.AllLink(), flags.Acknowledgement(), flags.Extended(), flags.HopsLeft(), flags.MaxHops())
 }
+
+type expectAck struct {
+	cmd    []byte
+	length int
+}

@@ -1,6 +1,14 @@
 package insteon
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
+
+const (
+	StreamingCommandPause = 200 * time.Millisecond
+	ChannelBufferSize     = 10
+)
 
 const (
 	serialStart byte = 0x02
@@ -124,7 +132,7 @@ func (al AllLinkRecordFlags) Controller() bool {
 }
 
 func (al AllLinkRecordFlags) Last() bool {
-	return al&0x2 == 0
+	return !(al&0x2 == 0)
 }
 
 func (al AllLinkRecordFlags) String() string {

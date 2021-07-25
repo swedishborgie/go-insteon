@@ -81,6 +81,15 @@ func (mock *InsteonHubMock) Write(p []byte) (int, error) {
 		}
 	}
 
+	// If we have one or more zero length requests expected, send those responses immediately.
+	for len(mock.expect) > 0 && len(mock.expect[0].req) == 0 {
+		if _, err := mock.outPipeOut.Write(mock.expect[0].rsp); err != nil {
+			return cnt, err
+		}
+
+		mock.expect = mock.expect[1:]
+	}
+
 	return cnt, nil
 }
 
