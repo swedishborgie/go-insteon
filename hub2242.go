@@ -7,7 +7,7 @@ import (
 type Hub2242 struct {
 	address string
 	conn    net.Conn
-	Hub
+	*HubStreaming
 }
 
 func NewHub2242(address string) (Hub, error) {
@@ -22,9 +22,9 @@ func NewHub2242(address string) (Hub, error) {
 	}
 
 	hub := &Hub2242{
-		address: address,
-		conn:    conn,
-		Hub:     streamHub,
+		address:      address,
+		conn:         conn,
+		HubStreaming: streamHub,
 	}
 
 	return hub, nil

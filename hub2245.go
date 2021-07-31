@@ -1,12 +1,15 @@
 package insteon
 
 import (
-	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"sync"
+	"time"
 )
 
 // Hub2245 is a reference to an Insteon Hub.
@@ -14,32 +17,140 @@ type Hub2245 struct {
 	address  string
 	userName string
 	password string
+	*HubStreaming
+
+	bufferTimer   *time.Ticker
+	ctx           context.Context
+	cancel        context.CancelFunc
+	closeWg       sync.WaitGroup
+	outQueueWrite *io.PipeWriter
+	outQueueRead  *io.PipeReader
 }
 
-// NewHub2245 creates a new reference to an Insteon hub.
-func NewHub2245(address string, userName string, password string) Hub {
-	return &Hub2245{
+// NewHub2245 creates a new reference to an Insteon Hub2. This hub is a little different from the Hub1 and the Serial
+// PLM in that it has an HTTP interface. The interface is a little unfortunate though since you lose bi-directional real
+// time communication, so you end up having to poll for events which makes interfacing to this modem a bit slower.
+func NewHub2245(address string, userName string, password string) (Hub, error) {
+	h := &Hub2245{
 		address:  address,
 		userName: userName,
 		password: password,
 	}
+
+	h.outQueueRead, h.outQueueWrite = io.Pipe()
+
+	h.ctx, h.cancel = context.WithCancel(context.Background())
+
+	if err := h.clearBuffer(h.ctx); err != nil {
+		return nil, err
+	}
+
+	streamHub, err := NewHubStreaming(h)
+	if err != nil {
+		return nil, err
+	}
+	h.HubStreaming = streamHub
+
+	return h, nil
 }
 
-// GetBuffer returns the current PLM buffer from the Insteon hub.
-func (hub *Hub2245) GetBuffer() ([]byte, error) {
-	resp, err := hub.doRequest("/buffstatus.xml")
+func (hub *Hub2245) startBufferTicker() {
+	hub.bufferTimer = time.NewTicker(500 * time.Millisecond)
+	hub.closeWg.Add(1)
+
+	go func() {
+		defer hub.closeWg.Done()
+		defer hub.bufferTimer.Stop()
+
+		for {
+			select {
+			case <-hub.bufferTimer.C:
+				hub.readBuffer()
+			case <-hub.ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (hub *Hub2245) readBuffer() error {
+	buf, err := hub.getBuffer(hub.ctx)
+	if err != nil {
+		return err
+	} else if len(buf) == 0 {
+		return nil
+	}
+
+	if _, err := hub.outQueueWrite.Write(buf); err != nil {
+		return err
+	}
+
+	// We read what's in the buffer, so we need to clear.
+	if err := hub.clearBuffer(hub.ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hub *Hub2245) Read(p []byte) (n int, err error) {
+	if hub.bufferTimer == nil {
+		hub.startBufferTicker()
+	}
+
+	return hub.outQueueRead.Read(p)
+}
+
+func (hub *Hub2245) Write(p []byte) (n int, err error) {
+	uri := fmt.Sprintf("/%X?%s=I=%X", cmdTypeFull, hex.EncodeToString(p), cmdTypeFull)
+
+	rsp, err := hub.doRequest(hub.ctx, uri)
+	if err != nil {
+		return 0, err
+	}
+	defer rsp.Body.Close()
+
+	return len(p), nil
+}
+
+func (hub *Hub2245) Close() error {
+	hub.cancel()
+	hub.closeWg.Wait()
+
+	if err := hub.outQueueWrite.Close(); err != nil {
+		return err
+	}
+
+	if err := hub.outQueueRead.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// getBuffer returns the current PLM buffer from the Insteon hub.
+func (hub *Hub2245) getBuffer(ctx context.Context) ([]byte, error) {
+	resp, err := hub.doRequest(ctx, "/buffstatus.xml")
 	if err != nil {
 		return nil, err
 	}
 
 	defer resp.Body.Close()
 
-	return parseBufferResponse(resp.Body)
+	buf, err := parseBufferResponse(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// The last byte appears to be the length of the buffer in nibbles.
+	buf = buf[0:(buf[100] / 2)]
+
+	return buf, nil
 }
 
-// ClearBuffer clears the PLM buffer.
-func (hub *Hub2245) ClearBuffer() error {
-	resp, err := hub.doRequest("/1?XB=M=1")
+// clearBuffer clears the PLM buffer.
+func (hub *Hub2245) clearBuffer(ctx context.Context) error {
+	resp, err := hub.doRequest(ctx, "/1?XB=M=1")
 	if err != nil {
 		return err
 	}
@@ -49,95 +160,10 @@ func (hub *Hub2245) ClearBuffer() error {
 	return err
 }
 
-// SendCommand sends a standard command to a specific Insteon device.
-func (hub *Hub2245) SendCommand(hostCmd byte, addr Address, imCmd1 byte, imCmd2 byte) (*CommandResponse, error) {
-	plmCmd := buildPlmCommand(hostCmd, addr, imCmd1, imCmd2)
-	uri := fmt.Sprintf("/%X?%X=I=%X", cmdTypeFull, plmCmd, cmdTypeFull)
-
-	if rsp, err := hub.doRequest(uri); err != nil {
-		return nil, err
-	} else {
-		defer rsp.Body.Close()
-	}
-
-	if err := hub.waitForAck(plmCmd); err != nil {
-		return nil, err
-	}
-
-	return hub.waitForResponse()
-}
-
-func (hub *Hub2245) SendExtendedCommand(hostCmd byte, addr Address, imCmd1, imCmd2 byte, userData [14]byte) (*CommandResponse, error) {
-	plmCmd := buildExtPlmCommand(hostCmd, addr, imCmd1, imCmd2, userData)
-	uri := fmt.Sprintf("/%X?%X=I=%X", cmdTypeFull, plmCmd, cmdTypeFull)
-
-	if _, err := hub.doRequest(uri); err != nil {
-		return nil, err
-	}
-
-	if err := hub.waitForAck(plmCmd); err != nil {
-		return nil, err
-	}
-
-	return hub.waitForResponse()
-}
-
-// SendGroupCommand sends a command to a group.
-func (hub *Hub2245) SendGroupCommand(hostCmd byte, group byte) error {
-	uri := fmt.Sprintf("/%X?%02X%02X=I=%X", cmdTypeShort, hostCmd, group, cmdTypeShort)
-	rsp, err := hub.doRequest(uri)
-	if err != nil {
-		return err
-	}
-
-	defer rsp.Body.Close()
-
-	return nil
-}
-
-func (hub *Hub2245) waitForAck(cmd []byte) error {
-	for i := 0; i < 5; i++ {
-		buf, err := hub.GetBuffer()
-		if err != nil {
-			return err
-		}
-
-		idx := bytes.Index(buf, cmd)
-
-		if idx >= 0 && idx+len(cmd)+1 <= len(buf) {
-			if buf[idx+len(cmd)] == serialACK {
-				return nil
-			} else if buf[idx+len(cmd)] == serialNAK {
-				return fmt.Errorf("device not ready for commands")
-			}
-		}
-	}
-
-	return fmt.Errorf("timeout waiting for device")
-}
-
-func (hub *Hub2245) waitForResponse() (*CommandResponse, error) {
-	for i := 0; i < 5; i++ {
-		buf, err := hub.GetBuffer()
-		if err != nil {
-			return nil, err
-		}
-
-		idx := bytes.Index(buf, []byte{0x02, 0x50})
-		if idx >= 0 && idx+11 <= len(buf) {
-			rsp := &CommandResponse{}
-			rsp.fromBytes(buf[idx : idx+11])
-
-			return rsp, nil
-		}
-	}
-
-	return nil, fmt.Errorf("timeout waiting for device")
-}
-
 // doRequest submits a request to the Insteon hub.
-func (hub *Hub2245) doRequest(uri string) (*http.Response, error) {
-	req, err := http.NewRequest("POST", hub.address+uri, nil)
+func (hub *Hub2245) doRequest(ctx context.Context, uri string) (*http.Response, error) {
+	log.Printf("post to " + hub.address + uri)
+	req, err := http.NewRequestWithContext(ctx, "POST", hub.address+uri, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,7 @@ import (
 
 type HubPLM struct {
 	port *serial.Port
-	Hub
+	*HubStreaming
 }
 
 const PLMBaudRate = 19200
@@ -23,8 +23,8 @@ func NewHubPLM(dev string) (Hub, error) {
 	}
 
 	hub := &HubPLM{
-		port: port,
-		Hub:  streamingHub,
+		port:         port,
+		HubStreaming: streamingHub,
 	}
 
 	return hub, nil
